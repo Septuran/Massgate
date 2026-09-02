@@ -72,8 +72,8 @@ data/installed/           tables from other installed mod paks (gitignored)
   and the survey laser uplink. Keep them in sync with `PreviewStaticMesh` in `patches.json` so
   the placement preview matches.
 
-Channels are defined in `patches.json` under `channels`; each becomes an Anchor item and a
-Resonator item with their own recipes. Add a name to the list and rebuild to add a channel.
+Channels are the three colour charges (Red, Green, Blue) defined in `patches.json` under
+`channels` with their icon colours in `channel_colors`. The lore fixes the count at three.
 
 ## Testing notes
 

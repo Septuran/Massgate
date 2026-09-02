@@ -1,9 +1,9 @@
 {
-    "_comment": "Rows Massgate adds to the Icarus data tables. Applied by tools/build.py on top of the base tables. Row names are prefixed Massgate_ so they never collide with the game or other mods. Two craftable items: Massgate_Anchor (base end) and Massgate_Resonator (field end). The channel is a setting on the placed gate (alt-press 'Tune channel'), stored by the Lua; the channel list below drives the per-channel map icon rows and is written into the Lua config at install. Tables marked per_channel are expanded once per channel with {CH} replaced. Rows named Massgate_<Kind>_<CH> and Massgate_Gate are legacy items from earlier builds, kept without recipes so placed gates keep loading.",
+    "_comment": "Rows Massgate adds to the Icarus data tables. Applied by tools/build.py on top of the base tables. Row names are prefixed Massgate_ so they never collide with the game or other mods. Two craftable items: Massgate_Anchor (base end) and Massgate_Resonator (field end), both built on the game's small metal crate actor so they get the standard storage panel (hold F) as an Exotics buffer; the Lua swaps their meshes. Channels are the three QCD colour charges (Red, Green, Blue); the channel is a setting on the placed gate (alt-press 'Tune channel'), stored by the Lua. Tables marked per_channel are expanded once per channel with {CH} replaced and \"{CH_COLOR}\" replaced by the channel's colour object. Rows named Massgate_<Kind>_<CH> and Massgate_Gate are legacy items from earlier builds, kept without recipes so placed gates keep loading.",
     "channels": [
-        "Alpha",
-        "Beta",
-        "Gamma"
+        "Red",
+        "Green",
+        "Blue"
     ],
     "tables": [
         {
@@ -76,9 +76,15 @@
                             },
                             {
                                 "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
                             }
                         ],
                         "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Massgate_Buffer"
                     }
                 },
                 {
@@ -148,9 +154,15 @@
                             },
                             {
                                 "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
                             }
                         ],
                         "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Massgate_Buffer"
                     }
                 }
             ]
@@ -179,8 +191,8 @@
                     "Name": "Item_Massgate_Anchor",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-DisplayName\", \"Massgate Anchor Lattice\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Anchors lock to the shared grid of the base, so any number of them can stand side by side. Needs heavy power. Tune the channel on the placed lattice. Outbound transits burn Exotics; inbound ones are carried by the anchor's own mass.\")",
-                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-FlavorText\", \"Exotics do not move through space. Space moves around them. UDA Field Manual, addendum 7, classified.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Tune it to one of the three colour charges; an anchor triplet of all three colours is colour-neutral, which is why anchors can stand side by side. Hold to open the lattice and load it with Exotics: every outbound transit burns some to re-stabilise the lattice. Inbound transits are carried by the anchor's own mass. Needs heavy power.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-FlavorText\", \"Three colours. No fourth. Confinement is not a limit of the machine but of the universe. UDA Field Manual, addendum 7, classified.\")",
                     "Weight": 40000,
                     "MaxStack": 1
                 },
@@ -188,7 +200,7 @@
                     "Name": "Item_Massgate_Resonator",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-DisplayName\", \"Massgate Resonator\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice, just enough to phase-lock to one Anchor on the channel you tune it to. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
                     "Weight": 15000,
                     "MaxStack": 1
@@ -267,9 +279,15 @@
                             },
                             {
                                 "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
                             }
                         ],
                         "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Massgate_Buffer"
                     }
                 },
                 {
@@ -339,9 +357,15 @@
                             },
                             {
                                 "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
                             }
                         ],
                         "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Massgate_Buffer"
                     }
                 }
             ]
@@ -457,9 +481,15 @@
                             },
                             {
                                 "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
                             }
                         ],
                         "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Massgate_Buffer"
                     }
                 }
             ]
@@ -520,7 +550,7 @@
             "add": [
                 {
                     "Name": "Massgate_Anchor",
-                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
+                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Containers/BP_Metal_Crate_Small.BP_Metal_Crate_Small_C",
                     "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
                     "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Anchor-DeployableName\", \"Anchor Lattice\")",
                     "PreviewStaticMesh": "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
@@ -530,7 +560,7 @@
                 },
                 {
                     "Name": "Massgate_Resonator",
-                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
+                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Containers/BP_Metal_Crate_Small.BP_Metal_Crate_Small_C",
                     "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
                     "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Resonator-DeployableName\", \"Resonator\")",
                     "PreviewStaticMesh": "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
@@ -591,7 +621,8 @@
                     "ScaleFactor": 1.1,
                     "bShowNameOnHover": true,
                     "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Anchor_{CH}-HoverName\", \"Massgate Anchor ({CH})\")",
-                    "bDisplayOnCompass": true
+                    "bDisplayOnCompass": true,
+                    "Color": "{CH_COLOR}"
                 },
                 {
                     "Name": "Massgate_Resonator_{CH}",
@@ -600,7 +631,8 @@
                     "ZOrder": 40,
                     "bShowNameOnHover": true,
                     "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Resonator_{CH}-HoverName\", \"Massgate Resonator ({CH})\")",
-                    "bDisplayOnCompass": true
+                    "bDisplayOnCompass": true,
+                    "Color": "{CH_COLOR}"
                 }
             ]
         },
@@ -621,7 +653,7 @@
                     "WorldHoldInteracts": [
                         {
                             "InteractionRow": {
-                                "RowName": "Interact_Toggle_Device_On",
+                                "RowName": "Interact_Deployable",
                                 "DataTableName": "D_Interactions"
                             },
                             "Tag": ""
@@ -661,7 +693,7 @@
                     "Name": "Massgate_Tune",
                     "Behaviour": "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C",
                     "InteractCooldown": 0.5,
-                    "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Tune-InteractionText\", \"Tune channel\")"
+                    "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Tune-InteractionText\", \"Tune colour charge\")"
                 }
             ]
         },
@@ -841,6 +873,56 @@
                     "DrawMethodOverride": "XThenY"
                 }
             ]
+        },
+        {
+            "table": "Traits/D_Inventory.json",
+            "add": [
+                {
+                    "Name": "Massgate_Buffer",
+                    "Inventories": [
+                        {
+                            "RowName": "Massgate_Buffer",
+                            "DataTableName": "D_InventoryInfo"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "table": "Inventory/D_InventoryInfo.json",
+            "_comment": "The lattice's Exotics buffer: four slots that only accept Exotics (Any_Meta tag query, as the dropship's exotics bay).",
+            "add": [
+                {
+                    "Name": "Massgate_Buffer",
+                    "InventoryID": {
+                        "Value": "General"
+                    },
+                    "SlotTemplate": {
+                        "RowName": "Any_Meta"
+                    },
+                    "StartingSlots": 4
+                }
+            ]
         }
-    ]
+    ],
+    "channel_colors": {
+        "Red": {
+            "B": 60,
+            "G": 60,
+            "R": 235,
+            "A": 255
+        },
+        "Green": {
+            "B": 90,
+            "G": 210,
+            "R": 70,
+            "A": 255
+        },
+        "Blue": {
+            "B": 255,
+            "G": 150,
+            "R": 70,
+            "A": 255
+        }
+    }
 }

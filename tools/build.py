@@ -76,6 +76,7 @@ TRAIT_TABLE_OVERRIDES = {
     "TalentTree": "D_TalentTrees",
     "EnergyFlow": "D_Energy",
     "ItemStaticData": "D_ItemsStatic",
+    "SlotTemplate": "D_TagQueries",
 }
 
 
@@ -125,9 +126,14 @@ def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
 def expand_channels(patches: dict) -> dict:
     """Clone every row of a per_channel table once per channel, replacing {CH}."""
     channels = patches.get("channels", [])
+    colors = patches.get("channel_colors", {})
 
     def fill(node, channel):
         if isinstance(node, str):
+            if node == "{CH_COLOR}":
+                if channel not in colors:
+                    sys.exit(f"!! no channel_colors entry for {channel}")
+                return colors[channel]
             return node.replace("{CH}", channel)
         if isinstance(node, dict):
             return {k: fill(v, channel) for k, v in node.items()}

@@ -32,11 +32,20 @@ local CONFIG = {
     -- Legacy rows from earlier builds: row -> kind, and an optional fixed default channel.
     LegacyRowPattern     = "^Massgate_(%a+)_(%w+)$",
     LegacyRow            = "Massgate_Gate",
-    GateClass            = "BP_Spotlight_Tripod_C",
+    -- Actor classes a gate can be built on (current: small metal crate, for its storage panel;
+    -- earlier builds used the spotlight tripod).
+    GateClasses          = { "BP_Metal_Crate_Small_C", "BP_Spotlight_Tripod_C" },
+    GateBlueprints       = {
+        "/Game/BP/Objects/World/Items/Deployables/Containers/BP_Metal_Crate_Small.BP_Metal_Crate_Small_C",
+        "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
+    },
     ButtonInteractHook   = "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C:Interact",
     EngageRow            = "Massgate_Activate",  -- D_Interactions row behind "Engage Massgate"
-    TuneRow              = "Massgate_Tune",      -- D_Interactions row behind "Tune channel"
-    Channels             = { "Alpha", "Beta", "Gamma" }, -- overridden from config.lua
+    TuneRow              = "Massgate_Tune",      -- D_Interactions row behind "Tune colour charge"
+    Channels             = { "Red", "Green", "Blue" }, -- the three colour charges; overridden from config.lua
+    ExoticsRow           = "MetaResource",       -- the Exotics item
+    BufferSlots          = 4,                    -- StartingSlots of D_InventoryInfo Massgate_Buffer
+    StackProperty        = 7,                    -- EDynamicItemProperties::ItemableStack
     ChannelStore         = "Mods/Massgate/channels.txt", -- relative to the ue4ss folder (UE4SS cwd)
     RequirePower         = true,
     InterferenceRadiusCm = 50000,   -- 500 m
@@ -230,20 +239,109 @@ local function isGate(actor)
 end
 
 local function allGates()
-    local gates = {}
-    local ok, objects = pcall(FindAllOf, CONFIG.GateClass)
-    if ok and objects then
-        for _, actor in ipairs(objects) do
-            local kind, channel = identify(actor)
-            if kind then gates[#gates + 1] = { actor = actor, kind = kind, channel = channel } end
+    local gates, seen = {}, {}
+    for _, className in ipairs(CONFIG.GateClasses) do
+        local ok, objects = pcall(FindAllOf, className)
+        if ok and objects then
+            for _, actor in ipairs(objects) do
+                local kind, channel = identify(actor)
+                local name = kind and fullName(actor)
+                if kind and not seen[name] then
+                    seen[name] = true
+                    gates[#gates + 1] = { actor = actor, kind = kind, channel = channel }
+                end
+            end
         end
     end
     return gates
 end
 
+-- Power: read the game's resource trait component (present on any item with a Resource trait):
+-- the device must be switched on and its energy connection receiving full flow.
 local function isPowered(gate)
-    local ok, running = pcall(function() return gate.bIsDeviceRunning end)
-    return ok and running == true
+    local ok, powered = pcall(function()
+        local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
+        local comps = gate:K2_GetComponentsByClass(cls)
+        if #comps == 0 then return nil end
+        local res = comps[1]
+        if res:IsDeviceTurnedOn() ~= true then return false end
+        local energy = res.EnergyComponent:Get()
+        if not valid(energy) then return false end
+        return energy:IsConnectedAndReceivingFullFlow() == true
+    end)
+    if ok and powered ~= nil then return powered end
+    -- Fallback for the old light-based gates.
+    local ok2, running = pcall(function() return gate.bIsDeviceRunning end)
+    return ok2 and running == true
+end
+
+------------------------------------------------------------------------------------------
+-- Exotics buffer: the gate's own storage inventory (hold F opens it in-game)
+------------------------------------------------------------------------------------------
+
+local function bufferOf(gate)
+    local found = nil
+    pcall(function()
+        local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
+        local comps = gate:K2_GetComponentsByClass(cls)
+        if #comps == 0 then return end
+        local invComp = comps[1]
+        -- UInventory objects live under the component; pick the first one owned by it.
+        local ok, all = pcall(FindAllOf, "Inventory")
+        if not ok or not all then return end
+        for _, inv in ipairs(all) do
+            local outer = nil
+            pcall(function() outer = inv:GetOuter() end)
+            if outer and outer:IsValid() and fullName(outer) == fullName(invComp) then
+                found = inv
+                return
+            end
+        end
+    end)
+    return found
+end
+
+local function stackOf(item)
+    local count = 1
+    pcall(function()
+        local dyn = item.ItemDynamicData
+        for i = 1, #dyn do
+            local entry = dyn[i]
+            if tonumber(entry.PropertyType) == CONFIG.StackProperty then count = entry.Value end
+        end
+    end)
+    return count
+end
+
+-- Returns total Exotics and a list of {slot, count}.
+local function exoticsIn(inv)
+    local total, slots = 0, {}
+    if not inv then return 0, slots end
+    for slot = 0, CONFIG.BufferSlots - 1 do
+        pcall(function()
+            if inv:HasValidItemInSlot(slot) then
+                local item = inv:GetItem(slot)
+                if item.ItemStaticData.RowName:ToString() == CONFIG.ExoticsRow then
+                    local n = stackOf(item)
+                    total = total + n
+                    slots[#slots + 1] = { slot = slot, count = n }
+                end
+            end
+        end)
+    end
+    return total, slots
+end
+
+local function consumeExotics(inv, amount)
+    local _, slots = exoticsIn(inv)
+    local left = amount
+    for _, s in ipairs(slots) do
+        if left <= 0 then break end
+        local take = math.min(left, s.count)
+        local ok = pcall(function() inv:RemoveItem(s.slot, take, false) end)
+        if ok then left = left - take end
+    end
+    return amount - left
 end
 
 ------------------------------------------------------------------------------------------
@@ -548,10 +646,21 @@ local function resolvePartner(gate, kind, channel, gates)
     return partners[1], nil
 end
 
-local function checkReady(gate, partner)
+local function tripCost(kind)
+    return (kind == "Anchor") and CONFIG.ExoticsOutbound or CONFIG.ExoticsInbound
+end
+
+local function checkReady(gate, kind, partner)
     if CONFIG.RequirePower then
         if not isPowered(gate) then return "This lattice is unpowered." end
         if not isPowered(partner) then return "The destination lattice is unpowered." end
+    end
+    local cost = tripCost(kind)
+    if cost > 0 then
+        local have = exoticsIn(bufferOf(gate))
+        if have < cost then
+            return string.format("Lattice holds %d Exotics, %d needed. Hold interact to load it.", have, cost)
+        end
     end
     return nil
 end
@@ -561,7 +670,13 @@ local function performTransit(gate, kind, channel, player, partner)
     local dest = groundedDestination(partner, player)
     local rotation = player:K2_GetActorRotation()
     local tames = tamesInField(gate, player)
-    local exotics = (kind == "Anchor") and CONFIG.ExoticsOutbound or CONFIG.ExoticsInbound
+    local exotics = tripCost(kind)
+    if exotics > 0 then
+        local taken = consumeExotics(bufferOf(gate), exotics)
+        if taken < exotics then
+            return tell(player, string.format("Transit aborted: the lattice could only spare %d of %d Exotics.", taken, exotics))
+        end
+    end
 
     local ok, moved = pcall(function() return player:K2_TeleportTo(dest, rotation) end)
     if not ok then
@@ -622,7 +737,7 @@ local function engage(gate, player)
             CONFIG.CooldownSeconds - (now - lastTransit[key])))
     end
 
-    local notReady = checkReady(gate, partner)
+    local notReady = checkReady(gate, kind, partner)
     if notReady then return tell(player, notReady) end
 
     if CONFIG.ChargeSeconds <= 0 then
@@ -644,7 +759,7 @@ local function engage(gate, player)
                 if distance(locationOf(player), locationOf(gate)) > CONFIG.FieldRadiusCm then
                     return tell(player, "Transit aborted: you left the field.")
                 end
-                local stillNotReady = checkReady(gate, partner)
+                local stillNotReady = checkReady(gate, kind, partner)
                 if stillNotReady then return tell(player, "Transit aborted: " .. stillNotReady) end
                 performTransit(gate, kind, channel, player, partner)
             end)
@@ -710,31 +825,33 @@ LoopAsync(5000, function()
     return hooked
 end)
 
-pcall(NotifyOnNewObject, "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
-    function(actor)
+for _, bpPath in ipairs(CONFIG.GateBlueprints) do
+    pcall(NotifyOnNewObject, bpPath, function(actor)
         ExecuteWithDelay(500, function()
             ExecuteInGameThread(function()
                 local kind, channel = identify(actor)
                 if kind then
-                    log("%s [%s] spawned at %s key=%s powered=%s", kind, channel, fmtLoc(locationOf(actor)),
-                        gateKey(actor), tostring(isPowered(actor)))
+                    log("%s [%s] spawned at %s key=%s powered=%s exotics=%d", kind, channel, fmtLoc(locationOf(actor)),
+                        gateKey(actor), tostring(isPowered(actor)), (exoticsIn(bufferOf(actor))))
                     decorate(actor, kind, channel)
                 end
             end)
         end)
     end)
+end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
     Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s channels=%s", #gates, tostring(hooked),
         tostring(DEV_MODE), table.concat(CONFIG.Channels, ",")))
     for i, entry in ipairs(gates) do
-        Ar:Log(string.format("  #%d %s [%s] %s key=%s powered=%s", i, entry.kind, entry.channel,
-            fmtLoc(locationOf(entry.actor)), gateKey(entry.actor), tostring(isPowered(entry.actor))))
+        Ar:Log(string.format("  #%d %s [%s] %s key=%s powered=%s exotics=%d", i, entry.kind, entry.channel,
+            fmtLoc(locationOf(entry.actor)), gateKey(entry.actor), tostring(isPowered(entry.actor)),
+            (exoticsIn(bufferOf(entry.actor)))))
     end
     return true
 end)
 
 local VERSION = (okCfg and type(userConfig) == "table" and userConfig.Version) or "repo"
-log("Massgate v%s loaded (class %s, dev=%s, channels=%s)", tostring(VERSION), CONFIG.GateClass,
+log("Massgate v%s loaded (classes %s, dev=%s, channels=%s)", tostring(VERSION), table.concat(CONFIG.GateClasses, "/"),
     tostring(DEV_MODE), table.concat(CONFIG.Channels, ","))
