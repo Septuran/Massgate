@@ -52,7 +52,7 @@ local CONFIG = {
     DevAnchorsPowered    = false,
     InterferenceRadiusCm = 50000,                      -- 500 m
     CooldownSeconds      = 20,
-    ChargeSeconds        = 3,
+    ChargeSeconds        = 3.9,                        -- fallback; the Charge sound's own length wins
     FieldRadiusCm        = 800,
     BringTames           = true,
     FollowingTamesOnly   = true,
@@ -78,6 +78,13 @@ local CONFIG = {
     Meshes = {
         Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
         Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
+    },
+    -- Sounds: FMOD events shipped with the game (object paths). Chosen by ear from decoded samples.
+    SoundsEnabled        = true,
+    Sounds = {
+        Charge  = "/Game/FMOD/Events/SFX/Deployable/Trail_Beacon/SFX_TRAIL_BEACON_ACTIVATE.SFX_TRAIL_BEACON_ACTIVATE",
+        Transit = "/Game/FMOD/Events/SFX/Deployable/Laser/SFX_LASER_START.SFX_LASER_START",
+        Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
     MapIcons             = true,
     MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
@@ -440,6 +447,85 @@ local function tell(player, text)
             controller:ClientReceiveServerMessage("[Massgate] " .. text)
         end
     end)
+end
+
+------------------------------------------------------------------------------------------
+-- Sounds: the game's own FMOD events, played as replicated one-shots at a gate.
+------------------------------------------------------------------------------------------
+
+local eventCache, soundFailed = {}, {}
+
+local function loadEvent(path)
+    if not path then return nil end
+    if valid(eventCache[path]) then return eventCache[path] end
+    local ok, ev = pcall(StaticFindObject, path)
+    if not (ok and valid(ev)) then ok, ev = pcall(LoadAsset, path) end
+    if ok and valid(ev) then
+        eventCache[path] = ev
+        return ev
+    end
+    log("could not load sound %s", path)
+    return nil
+end
+
+local function transformAt(loc)
+    return {
+        Rotation    = { X = 0, Y = 0, Z = 0, W = 1 },
+        Translation = { X = loc.X, Y = loc.Y, Z = loc.Z },
+        Scale3D     = { X = 1, Y = 1, Z = 1 },
+    }
+end
+
+-- Play an event at a location. First the game's replicated one-shot (everyone nearby hears it),
+-- then FMOD's plain positional call as a fallback. A path that errors is not retried.
+local function playEventAt(path, contextActor, loc)
+    if not CONFIG.SoundsEnabled or soundFailed[path] then return false end
+    local ev = loadEvent(path)
+    if not ev then return false end
+    local transform = transformAt(loc)
+    local ok, err = pcall(function()
+        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+        if not valid(lib) then error("audio library not found") end
+        lib:PlayReplicatedOneShot(contextActor, ev, transform, false, true)
+    end)
+    if ok then return true end
+    local ok2, err2 = pcall(function()
+        local fmod = StaticFindObject("/Script/FMODStudio.Default__FMODBlueprintStatics")
+        if not valid(fmod) then error("FMOD statics not found") end
+        fmod:PlayEventAtLocation(contextActor, ev, transform, true, false)
+    end)
+    if ok2 then return true end
+    soundFailed[path] = true
+    log("sound %s failed (%s / %s)", path, tostring(err), tostring(err2))
+    return false
+end
+
+local function playSound(name, actor, loc)
+    return playEventAt(CONFIG.Sounds[name], actor, loc or locationOf(actor))
+end
+
+-- How long the charge-up runs: the Charge event's length as FMOD reports it, else the config value.
+local chargeLength = nil
+local function chargeSeconds()
+    if chargeLength then return chargeLength end
+    local seconds = CONFIG.ChargeSeconds
+    pcall(function()
+        local ev = loadEvent(CONFIG.Sounds.Charge)
+        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+        if ev and valid(lib) then
+            local n = tonumber(lib:GetEventLengthInSeconds(ev))
+            if n and n >= 1 and n <= 10 then seconds = n end
+        end
+    end)
+    chargeLength = seconds
+    dbg("charge-up length: %.2f s", seconds)
+    return seconds
+end
+
+-- A refusal: message plus the Fail sound at the gate.
+local function refuse(player, gate, text)
+    playSound("Fail", gate)
+    return tell(player, text)
 end
 
 ------------------------------------------------------------------------------------------
@@ -828,6 +914,9 @@ local function performTransit(gate, kind, channel, player, partner)
         end
     end
 
+    playSound("Transit", gate, here)
+    playSound("Transit", partner, dest)
+
     local now = os.time()
     lastTransit[fullName(gate)] = now
     lastTransit[fullName(partner)] = now
@@ -983,52 +1072,53 @@ local function engage(gate, player)
     local key = fullName(gate)
     if charging[key] then
         if charging[key] == fullName(player) then
-            return tell(player, "Lattice already charging.")
+            return refuse(player, gate, "Lattice already charging.")
         end
-        return tell(player, "Lattice is charging for another prospector. Wait your turn.")
+        return refuse(player, gate, "Lattice is charging for another prospector. Wait your turn.")
     end
 
     local gates = allGates()
     dbg("engage %s [%s]: %d gate(s) on prospect", kind, tostring(channel), #gates)
 
     local partnerEntry, why = resolvePartner(gate, kind, channel, gates)
-    if not partnerEntry then return tell(player, why) end
+    if not partnerEntry then return refuse(player, gate, why) end
     local partner = partnerEntry.actor
 
     local now = os.time()
     if lastTransit[key] and now - lastTransit[key] < CONFIG.CooldownSeconds then
-        return tell(player, string.format("Lattice re-stabilising, %d s remaining.",
+        return refuse(player, gate, string.format("Lattice re-stabilising, %d s remaining.",
             CONFIG.CooldownSeconds - (now - lastTransit[key])))
     end
 
     local notReady = checkReady(gate, kind, partner)
-    if notReady then return tell(player, notReady) end
+    if notReady then return refuse(player, gate, notReady) end
 
     if CONFIG.ChargeSeconds <= 0 then
         return performTransit(gate, kind, channel, player, partner)
     end
 
     charging[key] = fullName(player)
-    tell(player, string.format("Lattice charging: %s to %s on %s. Stay in the field for %d s.",
-        kind, otherKind(kind), channel, CONFIG.ChargeSeconds))
+    playSound("Charge", gate)
+    local seconds = chargeSeconds()
+    dbg("charging %s -> %s on %s for %.2f s", kind, otherKind(kind), channel, seconds)
 
-    ExecuteWithDelay(CONFIG.ChargeSeconds * 1000, function()
+    ExecuteWithDelay(math.floor(seconds * 1000), function()
         ExecuteInGameThread(function()
             charging[key] = nil
             local ok, err = pcall(function()
                 if not valid(gate) or not valid(player) then return end
                 if not valid(partner) then
-                    return tell(player, "Transit aborted: the partner lattice is gone.")
+                    return refuse(player, gate, "Transit aborted: the partner lattice is gone.")
                 end
                 if distance(locationOf(player), locationOf(gate)) > CONFIG.FieldRadiusCm then
-                    return tell(player, "Transit aborted: you left the field.")
+                    return refuse(player, gate, "Transit aborted: you left the field.")
                 end
                 local _, nowChannel = identify(gate)
                 if nowChannel ~= channel or channelOf(partner) ~= channel then
-                    return tell(player, "Transit aborted: a crystal was changed while charging.")
+                    return refuse(player, gate, "Transit aborted: a crystal was changed while charging.")
                 end
                 local stillNotReady = checkReady(gate, kind, partner)
-                if stillNotReady then return tell(player, "Transit aborted: " .. stillNotReady) end
+                if stillNotReady then return refuse(player, gate, "Transit aborted: " .. stillNotReady) end
                 performTransit(gate, kind, channel, player, partner)
             end)
             if not ok then log("charge completion error: %s", tostring(err)) end
@@ -1129,6 +1219,21 @@ end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
+    if Parameters[1] == "sfx" then
+        local path, ctx = Parameters[2], gates[1] and gates[1].actor or nil
+        if not path or not ctx then
+            Ar:Log("[Massgate] usage: massgate sfx </Game/FMOD/Events/SFX/....Name>  (needs at least one placed gate)")
+            return true
+        end
+        local ev = loadEvent(path)
+        if not ev then Ar:Log("[Massgate] could not load " .. path) return true end
+        local ok, err = pcall(function()
+            local fmod = StaticFindObject("/Script/FMODStudio.Default__FMODBlueprintStatics")
+            fmod:PlayEvent2D(ctx, ev, true)
+        end)
+        Ar:Log(string.format("[Massgate] sfx %s -> %s", path, ok and "played" or tostring(err)))
+        return true
+    end
     if Parameters[1] == "power" then
         Ar:Log(string.format("[Massgate] relay enabled=%s failed=%s", tostring(CONFIG.Relay), tostring(relayFailed)))
         for _, entry in ipairs(gates) do
