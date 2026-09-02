@@ -429,15 +429,27 @@ local function loadMesh(kind)
     local path = CONFIG.Meshes[kind]
     if not path then return nil end
     if valid(meshCache[kind]) then return meshCache[kind] end
+    -- Already in memory (someone carries the item, or it is placed nearby)?
     local ok, mesh = pcall(StaticFindObject, path)
-    if not ok or not valid(mesh) then
-        ok, mesh = pcall(LoadAsset, (path:gsub("%.[^./]+$", "")))
-    end
     if ok and valid(mesh) then
         meshCache[kind] = mesh
         return mesh
     end
-    log("could not load %s mesh %s (%s)", kind, path, tostring(mesh))
+    -- Otherwise ask the asset registry. LoadAsset wants the object path ("/Game/X/Y.Y"), not the
+    -- package path; it returns (object, wasFound, didLoad). Game thread only (we are).
+    local found, loaded = nil, nil
+    ok, mesh, found, loaded = pcall(LoadAsset, path)
+    if not (ok and valid(mesh)) then
+        local pkg = path:gsub("%.[^./]+$", "")
+        local ok2, mesh2, found2, loaded2 = pcall(LoadAsset, pkg)
+        if ok2 and valid(mesh2) then ok, mesh, found, loaded = ok2, mesh2, found2, loaded2 end
+    end
+    if ok and valid(mesh) then
+        meshCache[kind] = mesh
+        log("%s mesh loaded on demand: %s", kind, path)
+        return mesh
+    end
+    log("could not load %s mesh %s (ok=%s found=%s loaded=%s)", kind, path, tostring(ok), tostring(found), tostring(loaded))
     return nil
 end
 
