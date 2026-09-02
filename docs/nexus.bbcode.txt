@@ -18,7 +18,7 @@ Two parts, both required. Needs [b]UE4SS 3.0.1[/b] installed first.
 [*]Start the game. The "Mods Detected" dialog lists the pak; [code]ue4ss\UE4SS.log[/code] shows [code]Massgate v... loaded[/code].
 [/list]
 
-[b]In game:[/b] unlock [b]Massgate[/b] in the Tier 4 Fabricator tree (next to the Exotic Processor), craft an Anchor and a Resonator, place them 500 m+ apart with power. Alternate-interact opens the [b]Lattice controls[/b] wheel to pick a colour. Hold interact on the Anchor to load Exotics. Press interact to engage.
+[b]In game:[/b] unlock [b]Massgate[/b] in the Tier 4 Fabricator tree (next to the Exotic Processor), craft an Anchor and a Resonator, place them 500 m+ apart with power. Hold interact opens the panel: put a [b]Tuning Crystal[/b] of the same colour in the last slot of both gates. Hold interact on the Anchor to load Exotics. Press interact to engage.
 
 [b]Multiplayer:[/b] everyone needs the pak and the Lua; dedicated servers must run UE4SS (Windows only).
 
@@ -31,9 +31,9 @@ Two parts, both required. Needs [b]UE4SS 3.0.1[/b] installed first.
 [*][b]Asymmetric cost:[/b] outbound costs Exotics, inbound is free.
 [*][b]Real constraints:[/b] power on both ends, 500 m interference, 3 s charge-up, cooldown.
 [*][b]Tames on Follow[/b] come along; your farm stays put.
-[*][b]Lattice panel:[/b] four Exotics slots plus one module slot.
+[*][b]Lattice panel:[/b] four Exotics slots, one module slot, one tuning slot.
 [*][b]Phase Coupler module:[/b] the Anchor powers its Resonator over the colour channel, at a higher trip cost.
-[*][b]Control wheel[/b] for colour, power and pick-up; coloured [b]map and compass icons[/b].
+[*][b]Tuning Crystals[/b] set the colour from the panel; coloured [b]map and compass icons[/b].
 [/list]
 
 [line]

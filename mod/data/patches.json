@@ -12,7 +12,7 @@
                 {
                     "Name": "Massgate_Anchor",
                     "Meshable": {
-                        "RowName": "Mesh_Generic_Fabricator"
+                        "RowName": "Mesh_Massgate_Anchor"
                     },
                     "Itemable": {
                         "RowName": "Item_Massgate_Anchor"
@@ -90,7 +90,7 @@
                 {
                     "Name": "Massgate_Resonator",
                     "Meshable": {
-                        "RowName": "Mesh_Generic_Fabricator"
+                        "RowName": "Mesh_Massgate_Resonator"
                     },
                     "Itemable": {
                         "RowName": "Item_Massgate_Resonator"
@@ -243,7 +243,7 @@
                     "Name": "Item_Massgate_Anchor",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-DisplayName\", \"Massgate Anchor Lattice\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Tune it to one of the three colour charges; an anchor triplet of all three colours is colour-neutral, which is why anchors can stand side by side. Hold to open the lattice and load it with Exotics: every outbound transit burns some to re-stabilise the lattice. Inbound transits are carried by the anchor's own mass. Needs heavy power.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Tune it to one of the three colour charges; an anchor triplet of all three colours is colour-neutral, which is why anchors can stand side by side. Hold to open the lattice and load it with Exotics: every outbound transit burns some to re-stabilise the lattice. Inbound transits are carried by the anchor's own mass. Needs heavy power. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-FlavorText\", \"Three colours. No fourth. Confinement is not a limit of the machine but of the universe. UDA Field Manual, addendum 7, classified.\")",
                     "Weight": 40000,
                     "MaxStack": 1
@@ -252,7 +252,7 @@
                     "Name": "Item_Massgate_Resonator",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-DisplayName\", \"Massgate Resonator\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
                     "Weight": 15000,
                     "MaxStack": 1
@@ -260,7 +260,7 @@
                 {
                     "Name": "Item_Massgate_Coupler",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-DisplayName\", \"Massgate Phase Coupler\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Portable_Beacon.ITEM_Portable_Beacon",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Modules/T_ITEM_MODULE_UTILITY_Movement.T_ITEM_MODULE_UTILITY_Movement",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (the fifth slot of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own. Pushing power as well as a prospector costs extra Exotics per outbound transit.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-FlavorText\", \"Strike the bell hard enough and the fork sings on its own.\")",
                     "Weight": 5000,
@@ -276,7 +276,7 @@
                 {
                     "Name": "Massgate_Anchor_{CH}",
                     "Meshable": {
-                        "RowName": "Mesh_Generic_Fabricator"
+                        "RowName": "Mesh_Massgate_Anchor"
                     },
                     "Itemable": {
                         "RowName": "Item_Massgate_Anchor_{CH}"
@@ -354,7 +354,7 @@
                 {
                     "Name": "Massgate_Resonator_{CH}",
                     "Meshable": {
-                        "RowName": "Mesh_Generic_Fabricator"
+                        "RowName": "Mesh_Massgate_Resonator"
                     },
                     "Itemable": {
                         "RowName": "Item_Massgate_Resonator_{CH}"
@@ -478,7 +478,7 @@
                 {
                     "Name": "Massgate_Gate",
                     "Meshable": {
-                        "RowName": "Mesh_Generic_Fabricator"
+                        "RowName": "Mesh_Massgate_Anchor"
                     },
                     "Itemable": {
                         "RowName": "Item_Massgate_Gate"
@@ -723,7 +723,7 @@
                     "WorldAltPressInteracts": [
                         {
                             "InteractionRow": {
-                                "RowName": "Massgate_Radial",
+                                "RowName": "Interact_Toggle_Device_On",
                                 "DataTableName": "D_Interactions"
                             },
                             "Tag": ""
@@ -749,11 +749,6 @@
                     "Behaviour": "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C",
                     "InteractCooldown": 2.0,
                     "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Activate-InteractionText\", \"Engage Massgate\")"
-                },
-                {
-                    "Name": "Massgate_Radial",
-                    "Behaviour": "/Game/BP/Behaviours/Interactable/BP_Interactable_RadialMenu_Deployable.BP_Interactable_RadialMenu_Deployable_C",
-                    "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Radial-InteractionText\", \"Lattice controls\")"
                 }
             ]
         },
@@ -1014,7 +1009,7 @@
         },
         {
             "table": "Inventory/D_InventoryInfo.json",
-            "_comment": "The lattice's buffer: slots 0-3 accept only Exotics (Any_Meta), slot 4 is the module slot (reuses the T4 communicator-upgrade tag query; our modules carry that tag).",
+            "_comment": "The lattice panel: slots 0-3 Exotics only (Any_Meta), slot 4 module (T4 communicator-upgrade tag), slot 5 tuning crystal (T3 communicator-upgrade tag). Our module and crystal items carry those tags.",
             "add": [
                 {
                     "Name": "Massgate_Buffer",
@@ -1024,7 +1019,7 @@
                     "SlotTemplate": {
                         "RowName": "Any_Meta"
                     },
-                    "StartingSlots": 5,
+                    "StartingSlots": 6,
                     "SlotOverrides": [
                         {
                             "Query": {
@@ -1032,73 +1027,208 @@
                                 "DataTableName": "D_TagQueries"
                             },
                             "Location": 4
+                        },
+                        {
+                            "Query": {
+                                "RowName": "Mission_Communicator_Upgrade_1",
+                                "DataTableName": "D_TagQueries"
+                            },
+                            "Location": 5
                         }
                     ]
                 }
             ]
         },
         {
-            "table": "Interactions/D_RadialOptions.json",
+            "table": "UI/D_MapIcons.json",
+            "_comment": "Icon rows for gates without a tuning crystal.",
             "add": [
                 {
-                    "Name": "Massgate_Red"
+                    "Name": "Massgate_Anchor_None",
+                    "WidgetClass": "/Game/BP/Objects/World/Items/Deployables/Radar/UMG_RadarIcon.UMG_RadarIcon_C",
+                    "MapIcon": "Texture2D'/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Home.Icon_Map_Home'",
+                    "Color": {
+                        "B": 200,
+                        "G": 200,
+                        "R": 200,
+                        "A": 255
+                    },
+                    "ZOrder": 40,
+                    "ScaleFactor": 1.1,
+                    "bShowNameOnHover": true,
+                    "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Anchor_None-HoverName\", \"Massgate Anchor (untuned)\")",
+                    "bDisplayOnCompass": true
                 },
                 {
-                    "Name": "Massgate_Green"
-                },
-                {
-                    "Name": "Massgate_Blue"
+                    "Name": "Massgate_Resonator_None",
+                    "WidgetClass": "/Game/BP/Objects/World/Items/Deployables/Radar/UMG_RadarIcon.UMG_RadarIcon_C",
+                    "MapIcon": "Texture2D'/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint'",
+                    "Color": {
+                        "B": 200,
+                        "G": 200,
+                        "R": 200,
+                        "A": 255
+                    },
+                    "ZOrder": 40,
+                    "bShowNameOnHover": true,
+                    "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Resonator_None-HoverName\", \"Massgate Resonator (untuned)\")",
+                    "bDisplayOnCompass": true
                 }
             ]
         },
         {
-            "table": "Interactions/D_RadialMenuData.json",
-            "_comment": "The lattice control wheel (alt-press). ToggleOn and Pickup_Deployable are handled by the game's radial behaviour; the colour options are handled by the Lua.",
+            "table": "Traits/D_Meshable.json",
+            "_comment": "The deployed container actor renders the item's Meshable mesh, so this is what a placed gate looks like.",
             "add": [
                 {
-                    "Name": "Massgate",
-                    "RadialOptions": [
-                        {
-                            "RadialOption": {
-                                "RowName": "Massgate_Red",
-                                "DataTableName": "D_RadialOptions"
+                    "Name": "Mesh_Massgate_Anchor",
+                    "ItemMesh": "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
+                    "EquipHandMesh": "/Game/Assets/3DArt/Interactables/Items/DummyCube/SK_dummy_cube.SK_dummy_cube"
+                },
+                {
+                    "Name": "Mesh_Massgate_Resonator",
+                    "ItemMesh": "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
+                    "EquipHandMesh": "/Game/Assets/3DArt/Interactables/Items/DummyCube/SK_dummy_cube.SK_dummy_cube"
+                },
+                {
+                    "Name": "Mesh_Massgate_Crystal",
+                    "ItemMesh": "/Game/ASS/ITM/SM_ITM_Exotic_Red_Clean.SM_ITM_Exotic_Red_Clean",
+                    "EquipHandMesh": "/Game/Assets/3DArt/Interactables/Items/DummyCube/SK_dummy_cube.SK_dummy_cube"
+                }
+            ]
+        },
+        {
+            "table": "Items/D_ItemsStatic.json",
+            "per_channel": true,
+            "_comment": "Tuning crystals: slot one into a gate's panel to set its colour charge.",
+            "add": [
+                {
+                    "Name": "Massgate_Crystal_{CH}",
+                    "Meshable": {
+                        "RowName": "Mesh_Massgate_Crystal"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Crystal_{CH}"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Manual_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade1"
+                            }
+                        ]
+                    },
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade1"
                             },
-                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-0-DisplayText\", \"Tune Red\")",
-                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
-                        },
-                        {
-                            "RadialOption": {
-                                "RowName": "Massgate_Green",
-                                "DataTableName": "D_RadialOptions"
+                            {
+                                "TagName": "Traits.Meshable"
                             },
-                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-1-DisplayText\", \"Tune Green\")",
-                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
-                        },
-                        {
-                            "RadialOption": {
-                                "RowName": "Massgate_Blue",
-                                "DataTableName": "D_RadialOptions"
+                            {
+                                "TagName": "Traits.Itemable"
                             },
-                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-2-DisplayText\", \"Tune Blue\")",
-                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
-                        },
-                        {
-                            "RadialOption": {
-                                "RowName": "ToggleOn",
-                                "DataTableName": "D_RadialOptions"
+                            {
+                                "TagName": "Traits.Interactable"
                             },
-                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-3-DisplayText\", \"Power On/Off\")",
-                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Home.Icon_Map_Home"
-                        },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Items/D_ItemTemplate.json",
+            "per_channel": true,
+            "add": [
+                {
+                    "Name": "Massgate_Crystal_{CH}",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Crystal_{CH}"
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Itemable.json",
+            "per_channel": true,
+            "add": [
+                {
+                    "Name": "Item_Massgate_Crystal_{CH}",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Crystal_{CH}-DisplayName\", \"Tuning Crystal ({CH})\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Resources/T_ITEM_Ore_RedExotic_WithIcon.T_ITEM_Ore_RedExotic_WithIcon",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Crystal_{CH}-Description\", \"A shard of exotic lattice carrying the {CH} colour charge. Slot it into the tuning slot of a Massgate Anchor or Resonator (the last slot of its panel) and the lattice takes on that colour. Two lattices of the same colour tune to one another; there are three colours and no fourth.\")",
+                    "Weight": 500,
+                    "MaxStack": 10
+                }
+            ]
+        },
+        {
+            "table": "Crafting/D_ProcessorRecipes.json",
+            "per_channel": true,
+            "add": [
+                {
+                    "Name": "Massgate_Crystal_{CH}",
+                    "Requirement": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "RequiredMillijoules": 30000,
+                    "RecipeSets": [
                         {
-                            "RadialOption": {
-                                "RowName": "Pickup_Deployable",
-                                "DataTableName": "D_RadialOptions"
-                            },
-                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-4-DisplayText\", \"Pick Up\")",
-                            "Image": "/Engine/EditorResources/S_Pickup.S_Pickup"
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
                         }
-                    ]
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "MetaResource",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 10
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Glass",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 5
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 5
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Massgate_Crystal_{CH}",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
                 }
             ]
         }

@@ -40,15 +40,15 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Resonator cost | 60 Exotics, 15 Electronics, 20 Composites, 40 Copper Wire, 10 Platinum Ingot, 1 Powerbank | Cheap enough to plant several outposts |
 | Anchor power | 2500 units while running | Comparable to a Material Processor; needs the base grid |
 | Resonator power | 500 units while running | A wind turbine or a couple of solar panels at the outpost |
-| Channels | Exactly three colour charges: Red, Green, Blue | QCD allows no fourth colour; picked on the placed gate from the alt-press wheel, stored per gate across saves |
+| Channels | Exactly three colour charges: Red, Green, Blue | QCD allows no fourth colour; a gate carries the colour of the Tuning Crystal in the last slot of its panel, saved with the gate like any item |
 | Pairing | Exactly one Anchor and one Resonator per channel | Two of the same kind on a channel never tune |
 | Anchor placement | Anchors ignore each other for interference | A base can hold one pad per channel in a row |
 | Resonator placement | No other gate of any kind within 500 m, its own anchor included | Stops short hops and gate spam; forces outposts far apart and far from base |
 | Charge-up | 3 s after engaging; you must stay within 8 m of the gate | Gives the transit weight and a window to abort |
 | Outbound trip | 5 Exotics drawn from the anchor's own buffer | Pushing out is the expensive choice; the lattice is loaded like a furnace |
-| Exotics buffer | Hold interact opens the panel: four Exotics-only slots plus one module slot | The game's storage panel doubles as the lattice's fuel and upgrade bay |
+| Panel | Hold interact opens six slots: four Exotics-only, one module, one Tuning Crystal | The game's storage panel doubles as fuel bay, upgrade bay and tuning control |
+| Tuning Crystal | Cheap per-colour item; no crystal means no channel | The channel control lives in the panel, no extra UI |
 | Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; outbound trips cost 3 extra Exotics because the anchor pushes power too |
-| Wheel | Alt-press opens the game's radial menu: Tune Red / Green / Blue, Power On/Off, Pick Up | One pick instead of cycling a button |
 | Inbound trip | Free, resonator to anchor | The anchor pulls you home |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
 | Tames | Your mounts and pets set to Follow within 8 m travel with you | F dismounts, so you engage on foot; only followers travel, so a farm stays put |
@@ -68,12 +68,11 @@ Two layers, both required:
    `{CH}` replaced. The rows reuse the game's small metal crate actor as the physical
    deployable because it brings the standard storage panel, and power comes from the Resource trait.
 2. **UE4SS Lua mod** (`mod/ue4ss/Massgate`). Hooks the generic button-press interaction,
-   reads the kind from the owning actor's item row and the channel from its per-gate store
-   (`channels.txt` next to the mod, keyed by the item's database GUID), applies the rules above, and
-   moves the player with the engine's teleport after a ground trace at the destination. At
-   spawn it swaps the tripod mesh per kind: the orbital-exchange landing pad for anchors, the
-   survey laser uplink for resonators. Power is read from the game's resource component, the
-   Exotics buffer from the gate's inventory. Messages reach the player through the game's chat box.
+   reads the kind from the owning actor's item row and the colour from the Tuning Crystal in the
+   panel's last slot, applies the rules above, and moves the player with the engine's teleport
+   after a ground trace at the destination. Power is read from the game's resource component,
+   the Exotics buffer and modules from the gate's inventory. Messages reach the player through
+   the game's chat box. Looks come from the data tables, not from the Lua.
 
 Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 
@@ -85,14 +84,14 @@ Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 | D_Deployable | Massgate_<K> | Variants, must be outside |
 | D_DeployableSetup | Massgate_<K> | Which Blueprint actor and preview mesh to spawn |
 | D_Resource, D_Energy | Massgate_<K> | Electric connection and draw (2500 / 500) |
-| D_Interactable | Massgate_Gate | Press = engage, hold = open the panel, alt-press = wheel, alt-hold = pick up (shared) |
-| D_Inventory, D_InventoryInfo | Massgate_Buffer | Slots 0-3 Exotics-only (Any_Meta), slot 4 module-only (reuses the T4 communicator-upgrade tag query) |
-| D_RadialMenuData, D_RadialOptions | Massgate, Massgate_<CH> | The wheel and its colour options |
-| D_ItemsStatic etc. | Massgate_Coupler | The Phase Coupler module item and its Fabricator recipe |
-| D_Interactions | Massgate_Activate, Massgate_Radial | "Engage Massgate" (press, button-trigger behaviour) and "Lattice controls" (alt-press, radial behaviour) |
+| D_Interactable | Massgate_Gate | Press = engage, hold = open the panel, alt-press = power on/off, alt-hold = pick up (shared) |
+| D_Inventory, D_InventoryInfo | Massgate_Buffer | Slots 0-3 Exotics-only (Any_Meta), slot 4 module-only, slot 5 crystal-only (reusing the T4/T3 communicator-upgrade tag queries) |
+| D_Meshable | Mesh_Massgate_<K>, Mesh_Massgate_Crystal | The deployed container renders the item's Meshable mesh, so this is the gate's look: landing pad, laser uplink, exotic shard |
+| D_ItemsStatic etc. | Massgate_Coupler, Massgate_Crystal_<CH> | The Phase Coupler module and the three Tuning Crystals, with Fabricator recipes |
+| D_Interactions | Massgate_Activate | "Engage Massgate" on the button-trigger behaviour |
 | D_ProcessorRecipes | Massgate_<K> | Two Fabricator recipes |
 | D_Talents | Massgate_Gate | One tech-tree node at (4550, 700) unlocking every recipe |
-| D_MapIcons | Massgate_<K>_<CH> | Map and compass icon per kind and channel; the Lua attaches the game's map-icon component and repoints it on tune |
+| D_MapIcons | Massgate_<K>_<CH>, Massgate_<K>_None | Map and compass icon per kind and colour (grey when untuned); the Lua attaches the game's map-icon component and repoints it when the crystal changes |
 | D_ItemsStatic etc. | Massgate_Gate, Massgate_<K>_<CH> | Legacy items from earlier builds kept so placed gates load; no recipes |
 
 ## Multiplayer

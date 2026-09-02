@@ -1,27 +1,27 @@
 --[[
     Massgate - exotic-matter transit gates for Icarus.
-    UE4SS 3.0.1 Lua side. The items, recipes, tech-tree node and power draw live in the
-    data-table pak (mod/data/patches.json); this script adds the behaviour.
+    UE4SS 3.0.1 Lua side. The items, recipes, tech-tree node, power draw, meshes and panel
+    layout live in the data-table pak (mod/data/patches.json); this script adds the behaviour.
 
-    Two craftable items, both Spotlight_Tripod actors under the hood:
+    Two craftable gates, both built on the game's small metal crate actor so they get the
+    standard storage panel (hold interact):
       * Anchor    (item row Massgate_Anchor)    : the base end. Heavy, power hungry. Anchors ignore
-                                                  each other for interference, so a base can hold
-                                                  several side by side.
+                                                  each other for interference.
       * Resonator (item row Massgate_Resonator) : the field end. Light, cheap, unshielded: refuses
                                                   to tune when ANY other gate is within the
                                                   interference radius, its own anchor included.
-    The channel is a setting on the placed gate: alt-press "Tune channel" cycles through the
-    configured list. Channels are stored per gate in channels.txt next to this mod, keyed by the
-    item's database GUID (or its position as a fallback), so they survive save and load.
-    A pair is one anchor and one resonator on the same channel.
+    The panel has six slots: 0-3 Exotics (the buffer), 4 one module, 5 one Tuning Crystal.
+    The crystal in slot 5 IS the gate's colour charge (Red, Green or Blue); no crystal, no channel.
+    A pair is one anchor and one resonator carrying the same colour.
 
     On "Engage Massgate" (press interact): validate the pair, charge up while the player stays in
     the field, then move the player (and any of their tames set to Follow inside the field) to
-    the partner gate, landing on traced ground. Inbound trips (to the anchor) are carried by the
-    anchor's mass and cost nothing; outbound trips (to a resonator) burn Exotics.
+    the partner gate, landing on traced ground. Inbound trips (to the anchor) are free; outbound
+    trips (to a resonator) burn Exotics from the anchor's buffer, more when a Phase Coupler is
+    slotted, which in turn lets the anchor power its resonator without a grid.
 
     Gameplay runs only where the game has authority (solo, host, or a UE4SS dedicated server).
-    Looks and map icons are local and run everywhere the Lua is installed.
+    Map icons are local and run everywhere the Lua is installed.
 
     Everything is wrapped in pcall and logged with the [Massgate] prefix so a failure never
     takes the game down; check ue4ss/UE4SS.log while testing.
@@ -29,59 +29,46 @@
 
 local CONFIG = {
     KindRows = { Massgate_Anchor = "Anchor", Massgate_Resonator = "Resonator" },
-    -- Legacy rows from earlier builds: row -> kind, and an optional fixed default channel.
-    LegacyRowPattern     = "^Massgate_(%a+)_(%w+)$",
+    LegacyRowPattern     = "^Massgate_(%a+)_(%w+)$",  -- old per-channel items: kind, ignored colour
     LegacyRow            = "Massgate_Gate",
-    -- Actor classes a gate can be built on (current: small metal crate, for its storage panel;
-    -- earlier builds used the spotlight tripod).
     GateClasses          = { "BP_Metal_Crate_Small_C", "BP_Spotlight_Tripod_C" },
     GateBlueprints       = {
         "/Game/BP/Objects/World/Items/Deployables/Containers/BP_Metal_Crate_Small.BP_Metal_Crate_Small_C",
         "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
     },
     ButtonInteractHook   = "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C:Interact",
-    EngageRow            = "Massgate_Activate",  -- D_Interactions row behind "Engage Massgate"
-    TuneRow              = "Massgate_Tune",      -- D_Interactions row behind "Tune colour charge"
-    Channels             = { "Red", "Green", "Blue" }, -- the three colour charges; overridden from config.lua
-    ExoticsRow           = "MetaResource",       -- the Exotics item
-    BufferSlots          = 4,                    -- slots 0-3 of the panel hold Exotics
-    ModuleSlot           = 4,                    -- slot 4 of the panel holds one module
-    CouplerRow           = "Massgate_Coupler",   -- Phase Coupler module item row
-    CouplerExtraExotics  = 3,                    -- added to the outbound cost when coupled
-    StackProperty        = 7,                    -- EDynamicItemProperties::ItemableStack
-    -- Radial wheel (alt-press): the game's radial behaviour, pointed at our D_RadialMenuData row.
-    RadialBehaviour      = "/Game/BP/Behaviours/Interactable/BP_Interactable_RadialMenu_Deployable.BP_Interactable_RadialMenu_Deployable_C",
-    RadialRow            = "Massgate",
-    RadialOptionPrefix   = "Massgate_",          -- Massgate_<Colour> options are ours
-    RadialLibrary        = "/Script/Icarus.Default__RadialMenuDataLibrary",
-    RadialTable          = "/Engine/Transient.D_RadialMenuData",
-    DevAnchorsPowered    = false,                -- dev mode: anchors count as powered
-    ChannelStore         = "Mods/Massgate/channels.txt", -- relative to the ue4ss folder (UE4SS cwd)
+    EngageRow            = "Massgate_Activate",
+    Channels             = { "Red", "Green", "Blue" },  -- overridden from config.lua
+    ExoticsRow           = "MetaResource",
+    BufferSlots          = 4,                          -- slots 0-3 hold Exotics
+    ModuleSlot           = 4,
+    TuningSlot           = 5,
+    CrystalRowPrefix     = "Massgate_Crystal_",        -- Massgate_Crystal_<Colour>
+    CouplerRow           = "Massgate_Coupler",
+    CouplerExtraExotics  = 3,
+    StackProperty        = 7,                          -- EDynamicItemProperties::ItemableStack
     RequirePower         = true,
-    InterferenceRadiusCm = 50000,   -- 500 m
+    DevAnchorsPowered    = false,
+    InterferenceRadiusCm = 50000,                      -- 500 m
     CooldownSeconds      = 20,
     ChargeSeconds        = 3,
     FieldRadiusCm        = 800,
     BringTames           = true,
     FollowingTamesOnly   = true,
     MountClass           = "BP_Mount_Base_C",
-    FollowState          = 1,       -- EMountMovementBehaviourState::Follow
+    FollowState          = 1,                          -- EMountMovementBehaviourState::Follow
     TameSpacingCm        = 250,
     ArrivalOffsetCm      = 150,
     ArrivalLiftCm        = 100,
     TraceUpCm            = 300,
     TraceDownCm          = 800,
-    ExoticsOutbound      = 5,       -- anchor -> resonator. TODO: actually deduct from inventory
+    ExoticsOutbound      = 5,
     ExoticsInbound       = 0,
-    Meshes = {
-        Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
-        Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
-    },
-    PlaceholderMeshMatch = "Tripod_Light",
     MapIcons             = true,
     MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
     MapIconsLibrary      = "/Script/Icarus.Default__MapIconsLibrary",
     MapIconsTable        = "/Engine/Transient.D_MapIcons",
+    IconRefreshMs        = 4000,                       -- re-check crystals and repoint icons
     Debug                = true,
 }
 
@@ -99,13 +86,9 @@ local function dbg(fmt, ...)
     if CONFIG.Debug then log(fmt, ...) end
 end
 
--- config.lua: dev switch, channel list, mesh overrides.
 local okCfg, userConfig = pcall(require, "config")
 local DEV_MODE = okCfg and type(userConfig) == "table" and userConfig.DevMode == true
 if DEV_MODE then
-    -- Anchors count as powered so a gridless base can test; resonators still need real power
-    -- or a Phase Coupler, so the upgrade is testable. Trip costs stay real: the dev pak adds a
-    -- fiber-to-Exotics recipe so the buffer can be loaded early.
     CONFIG.DevAnchorsPowered    = true
     CONFIG.CooldownSeconds      = 0
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m
@@ -113,13 +96,8 @@ if DEV_MODE then
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end
-if okCfg and type(userConfig) == "table" then
-    if type(userConfig.Channels) == "table" and #userConfig.Channels > 0 then
-        CONFIG.Channels = userConfig.Channels
-    end
-    if type(userConfig.Meshes) == "table" then
-        for kind, path in pairs(userConfig.Meshes) do CONFIG.Meshes[kind] = path end
-    end
+if okCfg and type(userConfig) == "table" and type(userConfig.Channels) == "table" and #userConfig.Channels > 0 then
+    CONFIG.Channels = userConfig.Channels
 end
 
 ------------------------------------------------------------------------------------------
@@ -148,6 +126,10 @@ local function fullName(obj)
     return ok and name or "?"
 end
 
+local function shortName(obj)
+    return fullName(obj):match("[^%.]+$") or "?"
+end
+
 local function metres(cm)
     return string.format("%.0f m", cm / 100)
 end
@@ -157,61 +139,15 @@ local function hasAuthority(actor)
     return ok and auth == true
 end
 
-local function channelIndex(channel)
-    for i, c in ipairs(CONFIG.Channels) do
-        if c == channel then return i end
+local function isChannel(name)
+    for _, c in ipairs(CONFIG.Channels) do
+        if c == name then return true end
     end
-    return nil
+    return false
 end
 
 ------------------------------------------------------------------------------------------
--- Channel store: "key=channel" lines, one gate per line
-------------------------------------------------------------------------------------------
-
-local channelStore = nil
-
-local function loadStore()
-    if channelStore then return channelStore end
-    channelStore = {}
-    local ok, err = pcall(function()
-        local f = io.open(CONFIG.ChannelStore, "r")
-        if not f then return end
-        for line in f:lines() do
-            local key, channel = line:match("^(.-)=(%w+)%s*$")
-            if key and channel then channelStore[key] = channel end
-        end
-        f:close()
-    end)
-    if not ok then log("channel store read failed: %s", tostring(err)) end
-    return channelStore
-end
-
-local function saveStore()
-    local ok, err = pcall(function()
-        local f = assert(io.open(CONFIG.ChannelStore, "w"))
-        for key, channel in pairs(channelStore or {}) do
-            f:write(key, "=", channel, "\n")
-        end
-        f:close()
-    end)
-    if not ok then log("channel store write failed: %s", tostring(err)) end
-end
-
--- Stable identity for a placed gate: the item's database GUID when it has one, else its
--- position rounded to 10 cm (a deployable does not move until picked up).
-local function gateKey(actor)
-    local guid = nil
-    pcall(function()
-        local s = actor.ItemData.DatabaseGUID:ToString()
-        if s and #s > 0 then guid = s end
-    end)
-    if guid then return "guid:" .. guid end
-    local loc = locationOf(actor)
-    return string.format("loc:%d,%d,%d", math.floor(loc.X / 10 + 0.5), math.floor(loc.Y / 10 + 0.5), math.floor(loc.Z / 10 + 0.5))
-end
-
-------------------------------------------------------------------------------------------
--- Gate discovery
+-- Gate identity: kind from the item row, colour from the crystal in the tuning slot
 ------------------------------------------------------------------------------------------
 
 local function rowNameOf(actor)
@@ -222,31 +158,67 @@ local function rowNameOf(actor)
     return nil
 end
 
--- Returns kind, defaultChannel for a gate actor, or nil when the actor is not a gate.
 local function kindOf(actor)
     if not valid(actor) then return nil end
     local row = rowNameOf(actor)
     if not row then return nil end
-    if CONFIG.KindRows[row] then return CONFIG.KindRows[row], CONFIG.Channels[1] end
-    if row == CONFIG.LegacyRow then return "Anchor", CONFIG.Channels[1] end
-    local kind, channel = row:match(CONFIG.LegacyRowPattern)
-    if kind == "Anchor" or kind == "Resonator" then
-        return kind, channelIndex(channel) and channel or CONFIG.Channels[1]
+    if CONFIG.KindRows[row] then return CONFIG.KindRows[row] end
+    if row == CONFIG.LegacyRow then return "Anchor" end
+    local kind = row:match(CONFIG.LegacyRowPattern)
+    if kind == "Anchor" or kind == "Resonator" then return kind end
+    return nil
+end
+
+-- The gate's own storage inventory (the panel).
+local function panelOf(gate)
+    local found = nil
+    pcall(function()
+        local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
+        local comps = gate:K2_GetComponentsByClass(cls)
+        if #comps == 0 then return end
+        local invComp = comps[1]
+        local ok, all = pcall(FindAllOf, "Inventory")
+        if not ok or not all then return end
+        for _, inv in ipairs(all) do
+            local outer = nil
+            pcall(function() outer = inv:GetOuter() end)
+            if outer and outer:IsValid() and fullName(outer) == fullName(invComp) then
+                found = inv
+                return
+            end
+        end
+    end)
+    return found
+end
+
+local function rowInSlot(inv, slot)
+    local row = nil
+    pcall(function()
+        if inv and inv:HasValidItemInSlot(slot) then
+            row = inv:GetItem(slot).ItemStaticData.RowName:ToString()
+        end
+    end)
+    return row
+end
+
+-- Colour charge of a gate, or nil when no (valid) crystal is slotted.
+local function channelOf(gate, inv)
+    local row = rowInSlot(inv or panelOf(gate), CONFIG.TuningSlot)
+    if row and row:sub(1, #CONFIG.CrystalRowPrefix) == CONFIG.CrystalRowPrefix then
+        local colour = row:sub(#CONFIG.CrystalRowPrefix + 1)
+        if isChannel(colour) then return colour end
     end
     return nil
 end
 
--- Returns kind, channel (stored channel wins over the row's default).
 local function identify(actor)
-    local kind, default = kindOf(actor)
+    local kind = kindOf(actor)
     if not kind then return nil end
-    local stored = loadStore()[gateKey(actor)]
-    if stored and channelIndex(stored) then return kind, stored end
-    return kind, default
+    return kind, channelOf(actor)
 end
 
 local function isGate(actor)
-    return identify(actor) ~= nil
+    return kindOf(actor) ~= nil
 end
 
 local function allGates()
@@ -267,8 +239,10 @@ local function allGates()
     return gates
 end
 
--- Power: read the game's resource trait component (present on any item with a Resource trait):
--- the device must be switched on and its energy connection receiving full flow.
+------------------------------------------------------------------------------------------
+-- Power (game's resource trait component) and the Exotics buffer
+------------------------------------------------------------------------------------------
+
 local function isPowered(gate)
     local ok, powered = pcall(function()
         local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
@@ -281,35 +255,8 @@ local function isPowered(gate)
         return energy:IsConnectedAndReceivingFullFlow() == true
     end)
     if ok and powered ~= nil then return powered end
-    -- Fallback for the old light-based gates.
     local ok2, running = pcall(function() return gate.bIsDeviceRunning end)
     return ok2 and running == true
-end
-
-------------------------------------------------------------------------------------------
--- Exotics buffer: the gate's own storage inventory (hold F opens it in-game)
-------------------------------------------------------------------------------------------
-
-local function bufferOf(gate)
-    local found = nil
-    pcall(function()
-        local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
-        local comps = gate:K2_GetComponentsByClass(cls)
-        if #comps == 0 then return end
-        local invComp = comps[1]
-        -- UInventory objects live under the component; pick the first one owned by it.
-        local ok, all = pcall(FindAllOf, "Inventory")
-        if not ok or not all then return end
-        for _, inv in ipairs(all) do
-            local outer = nil
-            pcall(function() outer = inv:GetOuter() end)
-            if outer and outer:IsValid() and fullName(outer) == fullName(invComp) then
-                found = inv
-                return
-            end
-        end
-    end)
-    return found
 end
 
 local function stackOf(item)
@@ -324,7 +271,6 @@ local function stackOf(item)
     return count
 end
 
--- Returns total Exotics and a list of {slot, count}.
 local function exoticsIn(inv)
     local total, slots = 0, {}
     if not inv then return 0, slots end
@@ -343,21 +289,6 @@ local function exoticsIn(inv)
     return total, slots
 end
 
-local function moduleIn(gate)
-    local row = nil
-    pcall(function()
-        local inv = bufferOf(gate)
-        if inv and inv:HasValidItemInSlot(CONFIG.ModuleSlot) then
-            row = inv:GetItem(CONFIG.ModuleSlot).ItemStaticData.RowName:ToString()
-        end
-    end)
-    return row
-end
-
-local function hasCoupler(anchor)
-    return moduleIn(anchor) == CONFIG.CouplerRow
-end
-
 local function consumeExotics(inv, amount)
     local _, slots = exoticsIn(inv)
     local left = amount
@@ -370,8 +301,12 @@ local function consumeExotics(inv, amount)
     return amount - left
 end
 
+local function hasCoupler(anchor)
+    return rowInSlot(panelOf(anchor), CONFIG.ModuleSlot) == CONFIG.CouplerRow
+end
+
 ------------------------------------------------------------------------------------------
--- Player feedback: local chat box for the local player, client RPC for remote players
+-- Player feedback
 ------------------------------------------------------------------------------------------
 
 local function tell(player, text)
@@ -390,88 +325,14 @@ local function tell(player, text)
 end
 
 ------------------------------------------------------------------------------------------
--- Look: swap the placeholder tripod mesh for the kind's mesh
+-- Map icon: the game's map-icon component pointing at Massgate_<Kind>_<Colour|None>
 ------------------------------------------------------------------------------------------
 
-local meshCache = {}
+local iconState = {} -- gate full name -> row currently applied
 
-local function loadMesh(kind)
-    local path = CONFIG.Meshes[kind]
-    if not path then return nil end
-    if valid(meshCache[kind]) then return meshCache[kind] end
-    local ok, mesh = pcall(StaticFindObject, path)
-    if not ok or not valid(mesh) then
-        ok, mesh = pcall(LoadAsset, (path:gsub("%.[^./]+$", "")))
-    end
-    if ok and valid(mesh) then
-        meshCache[kind] = mesh
-        return mesh
-    end
-    log("could not load %s mesh %s (%s)", kind, path, tostring(mesh))
-    return nil
+local function iconRow(kind, channel)
+    return "Massgate_" .. kind .. "_" .. (channel or "None")
 end
-
-local function isVisibleComp(comp)
-    local ok, vis = pcall(function() return comp:IsVisible() end)
-    return not ok or vis ~= false
-end
-
--- The tripod Blueprint may render through a static mesh, a skeletal mesh (moving light head),
--- or both. Strategy: swap every visible static mesh that is not a helper; if there was none to
--- swap, put our mesh on the base class' DeployableSM slot; hide any visible skeletal mesh.
-local function applyGateLook(actor, kind)
-    local ok, err = pcall(function()
-        local mesh = loadMesh(kind)
-        if not mesh then return end
-        local swapped, hidden, seen = 0, 0, {}
-
-        local smcClass = StaticFindObject("/Script/Engine.StaticMeshComponent")
-        local statics = actor:K2_GetComponentsByClass(smcClass)
-        for i = 1, #statics do
-            local comp = statics[i]
-            local current = comp.StaticMesh
-            local name = valid(current) and fullName(current) or "(none)"
-            local visible = isVisibleComp(comp)
-            seen[#seen + 1] = string.format("SM %s vis=%s", name:match("[^%.]+$") or name, tostring(visible))
-            if valid(current) and visible and not name:find("SphereHelper", 1, true) and not name:find("Sphere", 1, true) then
-                comp:SetStaticMesh(mesh)
-                swapped = swapped + 1
-            end
-        end
-
-        local skClass = StaticFindObject("/Script/Engine.SkeletalMeshComponent")
-        local skeletals = actor:K2_GetComponentsByClass(skClass)
-        for i = 1, #skeletals do
-            local comp = skeletals[i]
-            local current = comp.SkeletalMesh
-            local name = valid(current) and fullName(current) or "(none)"
-            local visible = isVisibleComp(comp)
-            seen[#seen + 1] = string.format("SK %s vis=%s", name:match("[^%.]+$") or name, tostring(visible))
-            if valid(current) and visible then
-                comp:SetVisibility(false, true)
-                hidden = hidden + 1
-            end
-        end
-
-        if swapped == 0 then
-            local slot = actor.DeployableSM
-            if valid(slot) then
-                slot:SetStaticMesh(mesh)
-                slot:SetVisibility(true, true)
-                swapped = 1
-                seen[#seen + 1] = "used DeployableSM slot"
-            end
-        end
-
-        dbg("%s look applied to %s: swapped=%d hidden=%d [%s]", kind, fullName(actor):match("[^%.]+$"),
-            swapped, hidden, table.concat(seen, "; "))
-    end)
-    if not ok then log("applyGateLook failed: %s", tostring(err)) end
-end
-
-------------------------------------------------------------------------------------------
--- Map icon: the game's map-icon component pointing at our D_MapIcons row Massgate_<Kind>_<Channel>
-------------------------------------------------------------------------------------------
 
 local function findMapIcon(actor, compClass)
     local found = nil
@@ -482,8 +343,7 @@ local function findMapIcon(actor, compClass)
     return found
 end
 
-local function pointMapIcon(comp, kind, channel)
-    local rowName = "Massgate_" .. kind .. "_" .. channel
+local function pointMapIcon(comp, rowName)
     local viaLibrary = pcall(function()
         local lib = StaticFindObject(CONFIG.MapIconsLibrary)
         comp.MapIconData = lib:MakeMapIcons(FName(rowName))
@@ -493,64 +353,33 @@ local function pointMapIcon(comp, kind, channel)
         local table = StaticFindObject(CONFIG.MapIconsTable)
         if valid(table) then comp.MapIconData.DataTable = table end
     end
-    return rowName, viaLibrary
 end
 
-local function addMapIcon(actor, kind, channel)
+local function updateMapIcon(actor, kind, channel)
     if not CONFIG.MapIcons then return end
+    local row = iconRow(kind, channel)
+    local key = fullName(actor)
+    if iconState[key] == row then return end
     local ok, err = pcall(function()
         local compClass = StaticFindObject(CONFIG.MapIconComponentClass)
         if not valid(compClass) then return log("map icon component class not found") end
-        if findMapIcon(actor, compClass) then return end
-
-        local comp = actor:AddComponentByClass(compClass, true, IDENTITY_TRANSFORM, true) -- deferred
-        if not valid(comp) then return log("AddComponentByClass returned nothing") end
-        local rowName, viaLibrary = pointMapIcon(comp, kind, channel)
-        pcall(function() comp.bSetupIconAutomatically = true end)
-        actor:FinishAddComponent(comp, true, IDENTITY_TRANSFORM)
-        pcall(function() comp:TrySetupMapIcon() end)
-        dbg("map icon %s attached to %s (row set via %s)", rowName, fullName(actor), viaLibrary and "library" or "fields")
+        local comp = findMapIcon(actor, compClass)
+        if comp then
+            pcall(function() comp:TryRemoveMapIcon() end)
+            pointMapIcon(comp, row)
+            pcall(function() comp:TrySetupMapIcon() end)
+        else
+            comp = actor:AddComponentByClass(compClass, true, IDENTITY_TRANSFORM, true)
+            if not valid(comp) then return log("AddComponentByClass returned nothing") end
+            pointMapIcon(comp, row)
+            pcall(function() comp.bSetupIconAutomatically = true end)
+            actor:FinishAddComponent(comp, true, IDENTITY_TRANSFORM)
+            pcall(function() comp:TrySetupMapIcon() end)
+        end
+        iconState[key] = row
+        dbg("map icon %s on %s", row, shortName(actor))
     end)
-    if not ok then log("addMapIcon failed: %s", tostring(err)) end
-end
-
-local function refreshMapIcon(actor, kind, channel)
-    if not CONFIG.MapIcons then return end
-    local ok, err = pcall(function()
-        local compClass = StaticFindObject(CONFIG.MapIconComponentClass)
-        local comp = valid(compClass) and findMapIcon(actor, compClass)
-        if not comp then return addMapIcon(actor, kind, channel) end
-        pcall(function() comp:TryRemoveMapIcon() end)
-        pointMapIcon(comp, kind, channel)
-        pcall(function() comp:TrySetupMapIcon() end)
-    end)
-    if not ok then log("refreshMapIcon failed: %s", tostring(err)) end
-end
-
-local function decorate(actor, kind, channel)
-    applyGateLook(actor, kind)
-    addMapIcon(actor, kind, channel)
-end
-
-------------------------------------------------------------------------------------------
--- Tuning: cycle the gate's channel
-------------------------------------------------------------------------------------------
-
-local function setChannel(gate, player, newChannel)
-    local kind, channel = identify(gate)
-    if not channelIndex(newChannel) then return end
-    loadStore()[gateKey(gate)] = newChannel
-    saveStore()
-    refreshMapIcon(gate, kind, newChannel)
-    log("tuned %s %s: %s -> %s", kind, gateKey(gate), tostring(channel), newChannel)
-    tell(player, string.format("%s tuned to %s.", kind, newChannel))
-end
-
--- Legacy cycling tune (no longer on the prompts; the wheel replaced it).
-local function tune(gate, player)
-    local _, channel = identify(gate)
-    local idx = channelIndex(channel) or 0
-    setChannel(gate, player, CONFIG.Channels[(idx % #CONFIG.Channels) + 1])
+    if not ok then log("updateMapIcon failed: %s", tostring(err)) end
 end
 
 ------------------------------------------------------------------------------------------
@@ -580,7 +409,6 @@ local function groundedDestination(partner, player)
     end)
     if ok and traced then
         target.Z = traced + CONFIG.ArrivalLiftCm
-        dbg("ground trace hit at Z=%.0f", traced)
     else
         target.Z = base.Z + CONFIG.ArrivalLiftCm
         dbg("ground trace unavailable (%s); using gate height", tostring(traced))
@@ -652,7 +480,7 @@ local function resolvePartner(gate, kind, channel, gates)
             if offends and d < CONFIG.InterferenceRadiusCm and (not nearestOffender or d < nearestOffender.d) then
                 nearestOffender = { d = d, entry = entry }
             end
-            if entry.channel == channel then
+            if channel and entry.channel == channel then
                 if entry.kind == kind then
                     sameKindOnChannel = sameKindOnChannel + 1
                 else
@@ -666,19 +494,21 @@ local function resolvePartner(gate, kind, channel, gates)
         return nil, string.format("Lattice interference: a %s is %s away (need %s).",
             nearestOffender.entry.kind, metres(nearestOffender.d), metres(CONFIG.InterferenceRadiusCm))
     end
+    if not channel then
+        return nil, "No colour charge. Slot a Tuning Crystal into the last slot of this lattice's panel."
+    end
     if sameKindOnChannel > 0 then
-        return nil, string.format("Channel %s has more than one %s. Retune or remove the extra one.", channel, kind)
+        return nil, string.format("More than one %s carries %s. Change a crystal.", kind, channel)
     end
     if #partners == 0 then
-        return nil, string.format("No %s tuned to channel %s.", otherKind(kind), channel)
+        return nil, string.format("No %s carries %s.", otherKind(kind), channel)
     end
     if #partners > 1 then
-        return nil, string.format("Channel %s has %d %ss; only one may be tuned.", channel, #partners, otherKind(kind))
+        return nil, string.format("%d %ss carry %s; only one may.", #partners, otherKind(kind), channel)
     end
     return partners[1], nil
 end
 
--- Outbound trips cost Exotics; a coupled pair costs extra because the anchor also pushes power.
 local function tripCost(kind, anchor)
     if kind ~= "Anchor" then return CONFIG.ExoticsInbound end
     local cost = CONFIG.ExoticsOutbound
@@ -686,14 +516,13 @@ local function tripCost(kind, anchor)
     return cost
 end
 
--- Power state of one end of a pair. Returns powered, source ("grid" | "coupled" | "dev").
+-- Returns powered, source ("grid" | "coupled" | "dev" | "none").
 local function powerState(gate, kind, otherGate)
     if kind == "Anchor" then
         if CONFIG.DevAnchorsPowered then return true, "dev" end
         return isPowered(gate), "grid"
     end
     if isPowered(gate) then return true, "grid" end
-    -- A resonator with no grid may be fed by its anchor through a Phase Coupler.
     if otherGate and hasCoupler(otherGate) then
         local anchorOk = CONFIG.DevAnchorsPowered or isPowered(otherGate)
         if anchorOk then return true, "coupled" end
@@ -719,9 +548,9 @@ local function checkReady(gate, kind, partner)
     end
     local cost = tripCost(kind, anchor)
     if cost > 0 then
-        local have = exoticsIn(bufferOf(gate))
+        local have = exoticsIn(panelOf(anchor))
         if have < cost then
-            return string.format("Lattice holds %d Exotics, %d needed. Hold interact to load it.", have, cost)
+            return string.format("Anchor holds %d Exotics, %d needed. Hold interact on it to load.", have, cost)
         end
     end
     return nil
@@ -735,9 +564,9 @@ local function performTransit(gate, kind, channel, player, partner)
     local anchor = (kind == "Anchor") and gate or partner
     local exotics = tripCost(kind, anchor)
     if exotics > 0 then
-        local taken = consumeExotics(bufferOf(anchor), exotics)
+        local taken = consumeExotics(panelOf(anchor), exotics)
         if taken < exotics then
-            return tell(player, string.format("Transit aborted: the lattice could only spare %d of %d Exotics.", taken, exotics))
+            return tell(player, string.format("Transit aborted: the anchor could only spare %d of %d Exotics.", taken, exotics))
         end
     end
 
@@ -793,7 +622,7 @@ local function engage(gate, player)
     end
 
     local gates = allGates()
-    dbg("engage %s [%s]: %d gate(s) on prospect", kind, channel, #gates)
+    dbg("engage %s [%s]: %d gate(s) on prospect", kind, tostring(channel), #gates)
 
     local partnerEntry, why = resolvePartner(gate, kind, channel, gates)
     if not partnerEntry then return tell(player, why) end
@@ -813,7 +642,7 @@ local function engage(gate, player)
     end
 
     charging[key] = fullName(player)
-    tell(player, string.format("Lattice charging: %s to %s on channel %s. Stay in the field for %d s.",
+    tell(player, string.format("Lattice charging: %s to %s on %s. Stay in the field for %d s.",
         kind, otherKind(kind), channel, CONFIG.ChargeSeconds))
 
     ExecuteWithDelay(CONFIG.ChargeSeconds * 1000, function()
@@ -827,6 +656,10 @@ local function engage(gate, player)
                 if distance(locationOf(player), locationOf(gate)) > CONFIG.FieldRadiusCm then
                     return tell(player, "Transit aborted: you left the field.")
                 end
+                local _, nowChannel = identify(gate)
+                if nowChannel ~= channel or channelOf(partner) ~= channel then
+                    return tell(player, "Transit aborted: a crystal was changed while charging.")
+                end
                 local stillNotReady = checkReady(gate, kind, partner)
                 if stillNotReady then return tell(player, "Transit aborted: " .. stillNotReady) end
                 performTransit(gate, kind, channel, player, partner)
@@ -837,16 +670,11 @@ local function engage(gate, player)
 end
 
 ------------------------------------------------------------------------------------------
--- Hooking. Both "Engage Massgate" and "Tune channel" use the game's generic ButtonTrigger
--- behaviour; the behaviour's interaction row tells them apart.
+-- Hooking: "Engage Massgate" is the game's generic ButtonTrigger behaviour, so we hook its
+-- Interact and act only when the owning actor is one of our gates.
 ------------------------------------------------------------------------------------------
 
 local hooked = false
-
-local function interactionRowOf(behaviour)
-    local ok, row = pcall(function() return behaviour.InteractionsRowHandle.RowName:ToString() end)
-    return ok and row or nil
-end
 
 local function onButtonInteract(self, Instigator, HitResult)
     local ok, err = pcall(function()
@@ -861,121 +689,43 @@ local function onButtonInteract(self, Instigator, HitResult)
         if not hasAuthority(owner) then
             return dbg("interaction seen on a client; the server handles it")
         end
-
-        local row = interactionRowOf(behaviour)
-        if row == CONFIG.TuneRow then
-            tune(owner, player)
-        elseif row == CONFIG.EngageRow or row == nil then
-            dbg("gate engaged by %s at %s", fullName(player), fmtLoc(locationOf(owner)))
-            engage(owner, player)
-        else
-            dbg("ignoring button interaction %s on a gate", tostring(row))
+        local row = nil
+        pcall(function() row = behaviour.InteractionsRowHandle.RowName:ToString() end)
+        if row ~= nil and row ~= CONFIG.EngageRow then
+            return dbg("ignoring button interaction %s on a gate", tostring(row))
         end
+        dbg("gate engaged by %s at %s", shortName(player), fmtLoc(locationOf(owner)))
+        engage(owner, player)
     end)
     if not ok then log("interact handler error: %s", tostring(err)) end
 end
 
-------------------------------------------------------------------------------------------
--- Radial wheel: point the game's radial behaviour at our menu row when it starts on a gate,
--- and act on our colour options when the player picks one.
-------------------------------------------------------------------------------------------
-
-local function gateOfBehaviour(behaviour)
-    local owner = nil
-    pcall(function()
-        local component = behaviour:GetInteractableComponent()
-        if valid(component) then owner = component:GetOwner() end
-    end)
-    if isGate(owner) then return owner end
-    return nil
+local function refreshAllIcons()
+    for _, entry in ipairs(allGates()) do updateMapIcon(entry.actor, entry.kind, entry.channel) end
 end
-
-local function pointRadialAtOurMenu(behaviour)
-    local viaLibrary = pcall(function()
-        local lib = StaticFindObject(CONFIG.RadialLibrary)
-        behaviour.RadialOptions = lib:MakeRadialMenuData(FName(CONFIG.RadialRow))
-    end)
-    if not viaLibrary then
-        behaviour.RadialOptions.RowName = FName(CONFIG.RadialRow)
-        local table = StaticFindObject(CONFIG.RadialTable)
-        if valid(table) then behaviour.RadialOptions.DataTable = table end
-    end
-    return viaLibrary
-end
-
-local function onRadialBeginPlay(self)
-    pcall(function()
-        local behaviour = self:get()
-        if not valid(behaviour) then return end
-        local gate = gateOfBehaviour(behaviour)
-        if not gate then return end
-        local via = pointRadialAtOurMenu(behaviour)
-        dbg("radial menu on %s pointed at %s (via %s)", fullName(gate):match("[^%.]+$"), CONFIG.RadialRow, via and "library" or "fields")
-    end)
-end
-
-local function onRadialInteract(self, Instigator, HitResult)
-    -- Belt and braces: make sure the row is ours right before the wheel opens next time.
-    pcall(function()
-        local behaviour = self:get()
-        if valid(behaviour) and gateOfBehaviour(behaviour) then pointRadialAtOurMenu(behaviour) end
-    end)
-end
-
-local function onRadialItemSelected(self, ItemActionId, ItemPayload)
-    local ok, err = pcall(function()
-        local behaviour = self:get()
-        if not valid(behaviour) then return end
-        local gate = gateOfBehaviour(behaviour)
-        if not gate or not hasAuthority(gate) then return end
-        local id = ItemActionId:get():ToString()
-        if id:sub(1, #CONFIG.RadialOptionPrefix) ~= CONFIG.RadialOptionPrefix then
-            return dbg("radial option %s left to the game", id)
-        end
-        local colour = id:sub(#CONFIG.RadialOptionPrefix + 1)
-        local player = nil
-        pcall(function() player = behaviour.Current_Player end)
-        if not valid(player) then pcall(function() player = behaviour.LastInstigator end) end
-        setChannel(gate, player, colour)
-    end)
-    if not ok then log("radial selection error: %s", tostring(err)) end
-end
-
-------------------------------------------------------------------------------------------
--- Hook installation. Blueprint functions can only be hooked once their class is loaded, so
--- each hook is retried until it sticks.
-------------------------------------------------------------------------------------------
-
-local pendingHooks = {
-    { path = CONFIG.ButtonInteractHook, fn = onButtonInteract, essential = true },
-    { path = CONFIG.RadialBehaviour .. ":ReceiveBeginPlay", fn = onRadialBeginPlay },
-    { path = CONFIG.RadialBehaviour .. ":Interact", fn = onRadialInteract },
-    { path = CONFIG.RadialBehaviour .. ":MenuItemSelected", fn = onRadialItemSelected },
-}
 
 local function tryHook()
-    local remaining = {}
-    for _, h in ipairs(pendingHooks) do
-        local ok, err = pcall(RegisterHook, h.path, h.fn)
-        if ok then
-            log("hooked %s", h.path)
-            if h.essential and not hooked then
-                hooked = true
-                for _, entry in ipairs(allGates()) do decorate(entry.actor, entry.kind, entry.channel) end
-            end
-        else
-            dbg("hook not available yet: %s (%s)", h.path, tostring(err))
-            remaining[#remaining + 1] = h
-        end
+    if hooked then return true end
+    local ok, err = pcall(RegisterHook, CONFIG.ButtonInteractHook, onButtonInteract)
+    if ok then
+        hooked = true
+        log("hooked %s", CONFIG.ButtonInteractHook)
+        refreshAllIcons()
+    else
+        dbg("hook not available yet (%s)", tostring(err))
     end
-    pendingHooks = remaining
-    return #pendingHooks == 0
+    return hooked
 end
 
 LoopAsync(5000, function()
-    local done = false
-    ExecuteInGameThread(function() done = tryHook() end)
-    return done
+    ExecuteInGameThread(tryHook)
+    return hooked
+end)
+
+-- Crystals can be swapped in the panel at any time; keep the icons honest.
+LoopAsync(CONFIG.IconRefreshMs, function()
+    if hooked then ExecuteInGameThread(function() pcall(refreshAllIcons) end) end
+    return false
 end)
 
 for _, bpPath in ipairs(CONFIG.GateBlueprints) do
@@ -984,9 +734,9 @@ for _, bpPath in ipairs(CONFIG.GateBlueprints) do
             ExecuteInGameThread(function()
                 local kind, channel = identify(actor)
                 if kind then
-                    log("%s [%s] spawned at %s key=%s powered=%s exotics=%d", kind, channel, fmtLoc(locationOf(actor)),
-                        gateKey(actor), tostring(isPowered(actor)), (exoticsIn(bufferOf(actor))))
-                    decorate(actor, kind, channel)
+                    log("%s [%s] spawned at %s powered=%s exotics=%d", kind, tostring(channel), fmtLoc(locationOf(actor)),
+                        tostring(isPowered(actor)), (exoticsIn(panelOf(actor))))
+                    updateMapIcon(actor, kind, channel)
                 end
             end)
         end)
@@ -995,16 +745,14 @@ end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
-    Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s channels=%s", #gates, tostring(hooked),
-        tostring(DEV_MODE), table.concat(CONFIG.Channels, ",")))
+    Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s", #gates, tostring(hooked), tostring(DEV_MODE)))
     for i, entry in ipairs(gates) do
-        Ar:Log(string.format("  #%d %s [%s] %s key=%s powered=%s exotics=%d", i, entry.kind, entry.channel,
-            fmtLoc(locationOf(entry.actor)), gateKey(entry.actor), tostring(isPowered(entry.actor)),
-            (exoticsIn(bufferOf(entry.actor)))))
+        Ar:Log(string.format("  #%d %s [%s] %s powered=%s exotics=%d coupler=%s", i, entry.kind, tostring(entry.channel),
+            fmtLoc(locationOf(entry.actor)), tostring(isPowered(entry.actor)), (exoticsIn(panelOf(entry.actor))),
+            tostring(entry.kind == "Anchor" and hasCoupler(entry.actor))))
     end
     return true
 end)
 
 local VERSION = (okCfg and type(userConfig) == "table" and userConfig.Version) or "repo"
-log("Massgate v%s loaded (classes %s, dev=%s, channels=%s)", tostring(VERSION), table.concat(CONFIG.GateClasses, "/"),
-    tostring(DEV_MODE), table.concat(CONFIG.Channels, ","))
+log("Massgate v%s loaded (dev=%s, channels=%s)", tostring(VERSION), tostring(DEV_MODE), table.concat(CONFIG.Channels, ","))

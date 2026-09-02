@@ -71,7 +71,8 @@ python toolsuild.py --package
 ```
 
 Builds from the original tables only, refuses dev mode and uncommitted changes, and writes
-`buildelease\Massgate_v<version>.zip` (pak + Lua folder + README.txt). Full procedure in
+`build
+elease\Massgate_v<version>.zip` (pak + Lua folder + README.txt). Full procedure in
 [docs/releasing.md](docs/releasing.md).
 
 ## Configuration
@@ -79,10 +80,7 @@ Builds from the original tables only, refuses dev mode and uncommitted changes, 
 `mod/ue4ss/Massgate/Scripts/config.lua` (rewritten in the game folder by `--install`):
 
 - `DevMode` — see above.
-- `Meshes` — optional table `{ Anchor = path, Resonator = path }` overriding the meshes the two
-  gate kinds wear instead of the spotlight tripod. Defaults are the orbital-exchange landing pad
-  and the survey laser uplink. Keep them in sync with `PreviewStaticMesh` in `patches.json` so
-  the placement preview matches.
+- `Channels` — the colour names; written from `patches.json` at install.
 
 Channels are the three colour charges (Red, Green, Blue) defined in `patches.json` under
 `channels` with their icon colours in `channel_colors`. The lore fixes the count at three.
