@@ -52,7 +52,8 @@ local CONFIG = {
     DevAnchorsPowered    = false,
     InterferenceRadiusCm = 50000,                      -- 500 m
     CooldownSeconds      = 20,
-    ChargeSeconds        = 3.9,                        -- fallback; the Charge sound's own length wins
+    ChargeSeconds        = 3.5,                        -- transit fires 3.5 s into the 5 s charge sound
+    ChargeFollowsSound   = false,                      -- true: use the Charge event's length instead
     FieldRadiusCm        = 800,
     BringTames           = true,
     FollowingTamesOnly   = true,
@@ -84,8 +85,8 @@ local CONFIG = {
     -- `massgate sfx <name>` and are known to play.
     SoundsEnabled        = true,
     Sounds = {
-        Charge  = "/Game/FMOD/Events/SFX/Deployable/Kit_Radar/SFX_DEP_KITRADAR_STOP.SFX_DEP_KITRADAR_STOP",              -- 3.2 s
-        Transit = "/Game/FMOD/Events/SFX/Deployable/TeslaCoil/SFX_DEP_TESLACOIL_ELECTRIFY_ZAP.SFX_DEP_TESLACOIL_ELECTRIFY_ZAP", -- 2 s
+        Charge  = "/Game/FMOD/Events/SFX/Mission/SFX_ORBITAL_LASER_SCAN_INTENSE.SFX_ORBITAL_LASER_SCAN_INTENSE", -- 5.05 s
+        Transit = "/Game/FMOD/Events/SFX/Mission/SFX_ORBITAL_LASER_SCAN_INTENSE.SFX_ORBITAL_LASER_SCAN_INTENSE", -- same, heard at the destination
         Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
     MapIcons             = true,
@@ -523,7 +524,7 @@ local chargeLength = nil
 local function chargeSeconds()
     if chargeLength then return chargeLength end
     local seconds = CONFIG.ChargeSeconds
-    local ev = loadEvent(CONFIG.Sounds.Charge)
+    local ev = CONFIG.ChargeFollowsSound and loadEvent(CONFIG.Sounds.Charge) or nil
     if ev then
         local n = eventLength(ev)
         if n >= 1 and n <= 10 then seconds = n end
@@ -925,7 +926,7 @@ local function performTransit(gate, kind, channel, player, partner)
         end
     end
 
-    playSound("Transit", gate, here)
+    -- The charge sound is still playing at the origin; the destination gets its own.
     playSound("Transit", partner, dest)
 
     local now = os.time()
