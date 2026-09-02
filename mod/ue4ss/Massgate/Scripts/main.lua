@@ -87,7 +87,7 @@ local CONFIG = {
     SoundsEnabled        = true,
     Sounds = {
         Charge  = "/Game/FMOD/Events/SFX/Mission/SFX_ORBITAL_LASER_SCAN_INTENSE.SFX_ORBITAL_LASER_SCAN_INTENSE", -- 5.05 s
-        Transit = "/Game/FMOD/Events/SFX/Mission/SFX_ORBITAL_LASER_SCAN_INTENSE.SFX_ORBITAL_LASER_SCAN_INTENSE", -- same, heard at the destination
+        Transit = nil, -- by request, no sound at transit: the charge sound covers the whole sequence
         Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
     MapIcons             = true,
