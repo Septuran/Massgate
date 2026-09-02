@@ -64,8 +64,10 @@ local CONFIG = {
     TraceDownCm          = 800,
     ExoticsOutbound      = 5,
     ExoticsInbound       = 0,
-    -- Looks: the crate actor draws its own box through components we cannot read from Lua, so we
-    -- hide every mesh component except the base class' DeployableSM slot and put our mesh there.
+    -- Looks: the crate actor draws its own box through its DeployableSK skeletal mesh (plus two
+    -- static-mesh crate parts). Hide those by name and put our mesh in the DeployableSM slot.
+    -- (Walking the whole object table to find them froze the game for ~2 s per gate.)
+    HideComponents = { "DeployableSK", "SM_DEP_Crate_SML_Metal", "SM_DEP_Crate_SML_Metal1" },
     Meshes = {
         Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
         Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
@@ -112,6 +114,16 @@ end
 
 local function valid(obj)
     return obj ~= nil and obj:IsValid()
+end
+
+-- UE4SS hands back RemoteUnrealParam wrappers for array elements and some struct fields;
+-- the real value is behind :get(). Plain values pass through.
+local function unwrap(v)
+    if type(v) == "userdata" then
+        local ok, inner = pcall(function() return v:get() end)
+        if ok and inner ~= nil then return inner end
+    end
+    return v
 end
 
 local function locationOf(actor)
@@ -201,11 +213,11 @@ local function panelOf(gate)
         local targets = { [key] = true }
         local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
         local comps = gate:K2_GetComponentsByClass(cls)
-        for i = 1, #comps do targets[fullName(comps[i])] = true end
+        for i = 1, #comps do targets[fullName(unwrap(comps[i]))] = true end
         -- First choice: the component's own map of inventories.
         if #comps > 0 then
             pcall(function()
-                comps[1].Inventories:ForEach(function(k, v)
+                unwrap(comps[1]).Inventories:ForEach(function(k, v)
                     local inv = v:get()
                     if not found and inv and inv:IsValid() then found = inv end
                 end)
@@ -309,7 +321,7 @@ local function isPowered(gate)
         local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
         local comps = gate:K2_GetComponentsByClass(cls)
         if #comps == 0 then return nil end
-        local res = comps[1]
+        local res = unwrap(comps[1])
         if res:IsDeviceTurnedOn() ~= true then return false end
         local energy = res.EnergyComponent:Get()
         if not valid(energy) then return false end
@@ -326,8 +338,12 @@ local stackDebugged = false
 local function stackOf(item)
     local count, seen = nil, {}
     local ok, err = pcall(function()
-        item.ItemDynamicData:ForEach(function(index, elem)
-            local entry = elem:get()
+        local dyn = unwrap(item.ItemDynamicData)
+        if type(dyn) ~= "userdata" or dyn.ForEach == nil then
+            error("ItemDynamicData is " .. type(item.ItemDynamicData) .. " -> " .. type(dyn) .. " (no ForEach)")
+        end
+        dyn:ForEach(function(index, elem)
+            local entry = unwrap(elem)
             local ptype, value = tonumber(entry.PropertyType), tonumber(entry.Value)
             seen[#seen + 1] = tostring(entry.PropertyType) .. "=" .. tostring(entry.Value)
             if ptype == CONFIG.StackProperty then count = value end
@@ -454,15 +470,18 @@ local function applyLook(actor, kind)
         local slotName = fullName(slot)
         local report, hidden = {}, 0
 
-        for _, comp in ipairs(componentsOf(actor)) do
-            local cls = className(comp)
-            if cls:find("MeshComponent", 1, true) and fullName(comp) ~= slotName then
+        for _, name in ipairs(CONFIG.HideComponents) do
+            local comp = nil
+            pcall(function() comp = unwrap(actor[name]) end)
+            if valid(comp) and fullName(comp) ~= slotName then
                 local vis = nil
                 pcall(function() vis = comp:IsVisible() end)
                 pcall(function() comp:SetVisibility(false, true) end)
                 pcall(function() comp:SetHiddenInGame(true, true) end)
                 hidden = hidden + 1
-                report[#report + 1] = string.format("%s(%s) was vis=%s", shortName(comp), cls, tostring(vis))
+                report[#report + 1] = string.format("%s was vis=%s", name, tostring(vis))
+            else
+                report[#report + 1] = name .. " missing"
             end
         end
 
@@ -478,36 +497,19 @@ local function applyLook(actor, kind)
     if not ok then log("applyLook failed: %s", tostring(err)) end
 end
 
--- One-time diagnostic: a few seconds after the look pass, list every component on the actor
--- so whatever still draws a box can be identified.
-local dumped = {}
-local function dumpComponentsLater(actor)
-    local key = fullName(actor)
-    if dumped[key] then return end
-    dumped[key] = true
-    ExecuteWithDelay(3000, function()
-        ExecuteInGameThread(function()
-            pcall(function()
-                if not valid(actor) then return end
-                local comps = componentsOf(actor)
-                local parts = {}
-                for _, c in ipairs(comps) do
-                    local vis = "-"
-                    pcall(function() vis = tostring(c:IsVisible()) end)
-                    parts[#parts + 1] = string.format("%s:%s vis=%s", className(c), shortName(c), vis)
-                end
-                log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
-                pcall(function()
-                    local out = {}
-                    actor:GetAttachedActors(out, true)
-                    if #out > 0 then
-                        local names = {}
-                        for i = 1, #out do names[#names + 1] = fullName(out[i]) end
-                        log("attached actors of %s: %s", shortName(actor), table.concat(names, " | "))
-                    end
-                end)
-            end)
-        end)
+-- Diagnostic (console: `massgate dump`): list every component on each gate. Walks the whole
+-- object table, which stalls the game for a couple of seconds, so never run it automatically.
+local function dumpComponents(actor)
+    pcall(function()
+        if not valid(actor) then return end
+        local comps = componentsOf(actor)
+        local parts = {}
+        for _, c in ipairs(comps) do
+            local vis = "-"
+            pcall(function() vis = tostring(c:IsVisible()) end)
+            parts[#parts + 1] = string.format("%s:%s vis=%s", className(c), shortName(c), vis)
+        end
+        log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
     end)
 end
 
@@ -525,7 +527,7 @@ local function findMapIcon(actor, compClass)
     local found = nil
     pcall(function()
         local comps = actor:K2_GetComponentsByClass(compClass)
-        if #comps > 0 then found = comps[1] end
+        if #comps > 0 then found = unwrap(comps[1]) end
     end)
     return found
 end
@@ -938,7 +940,6 @@ for _, bpPath in ipairs(CONFIG.GateBlueprints) do
                         tostring(isPowered(actor)), (exoticsIn(panelOf(actor))), tostring(panelOf(actor) ~= nil))
                     applyLook(actor, kind)
                     updateMapIcon(actor, kind, channel)
-                    dumpComponentsLater(actor)
                 end
             end)
         end)
@@ -947,6 +948,11 @@ end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
+    if Parameters[1] == "dump" then
+        for _, entry in ipairs(gates) do dumpComponents(entry.actor) end
+        Ar:Log(string.format("[Massgate] dumped %d gate(s) to UE4SS.log", #gates))
+        return true
+    end
     Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s", #gates, tostring(hooked), tostring(DEV_MODE)))
     for i, entry in ipairs(gates) do
         Ar:Log(string.format("  #%d %s [%s] %s powered=%s exotics=%d coupler=%s", i, entry.kind, tostring(entry.channel),
