@@ -287,22 +287,60 @@ local function loadMesh(kind)
     return nil
 end
 
+local function isVisibleComp(comp)
+    local ok, vis = pcall(function() return comp:IsVisible() end)
+    return not ok or vis ~= false
+end
+
+-- The tripod Blueprint may render through a static mesh, a skeletal mesh (moving light head),
+-- or both. Strategy: swap every visible static mesh that is not a helper; if there was none to
+-- swap, put our mesh on the base class' DeployableSM slot; hide any visible skeletal mesh.
 local function applyGateLook(actor, kind)
     local ok, err = pcall(function()
         local mesh = loadMesh(kind)
         if not mesh then return end
+        local swapped, hidden, seen = 0, 0, {}
+
         local smcClass = StaticFindObject("/Script/Engine.StaticMeshComponent")
-        local components = actor:K2_GetComponentsByClass(smcClass)
-        local swapped = 0
-        for i = 1, #components do
-            local comp = components[i]
+        local statics = actor:K2_GetComponentsByClass(smcClass)
+        for i = 1, #statics do
+            local comp = statics[i]
             local current = comp.StaticMesh
-            if valid(current) and fullName(current):find(CONFIG.PlaceholderMeshMatch, 1, true) then
+            local name = valid(current) and fullName(current) or "(none)"
+            local visible = isVisibleComp(comp)
+            seen[#seen + 1] = string.format("SM %s vis=%s", name:match("[^%.]+$") or name, tostring(visible))
+            if valid(current) and visible and not name:find("SphereHelper", 1, true) and not name:find("Sphere", 1, true) then
                 comp:SetStaticMesh(mesh)
                 swapped = swapped + 1
             end
         end
-        dbg("%s look applied to %s (%d component(s) swapped)", kind, fullName(actor), swapped)
+
+        local skClass = StaticFindObject("/Script/Engine.SkeletalMeshComponent")
+        local skeletals = actor:K2_GetComponentsByClass(skClass)
+        for i = 1, #skeletals do
+            local comp = skeletals[i]
+            local current = comp.SkeletalMesh
+            local name = valid(current) and fullName(current) or "(none)"
+            local visible = isVisibleComp(comp)
+            seen[#seen + 1] = string.format("SK %s vis=%s", name:match("[^%.]+$") or name, tostring(visible))
+            if valid(current) and visible then
+                comp:SetVisibility(false, true)
+                hidden = hidden + 1
+            end
+        end
+
+        if swapped == 0 then
+            local slot = actor.DeployableSM
+            if valid(slot) then
+                slot:SetStaticMesh(mesh)
+                slot:SetVisibility(true, true)
+                swapped = 1
+                seen[#seen + 1] = "used DeployableSM slot"
+            end
+        end
+
+        dbg("%s look applied to %s: swapped=%d hidden=%d [%s]", kind, fullName(actor):match("[^%.]+$"),
+            swapped, hidden, table.concat(seen, "; "))
     end)
     if not ok then log("applyGateLook failed: %s", tostring(err)) end
 end

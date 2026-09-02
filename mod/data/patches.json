@@ -1,66 +1,154 @@
 {
     "_comment": "Rows Massgate adds to the Icarus data tables. Applied by tools/build.py on top of the base tables. Row names are prefixed Massgate_ so they never collide with the game or other mods. Two craftable items: Massgate_Anchor (base end) and Massgate_Resonator (field end). The channel is a setting on the placed gate (alt-press 'Tune channel'), stored by the Lua; the channel list below drives the per-channel map icon rows and is written into the Lua config at install. Tables marked per_channel are expanded once per channel with {CH} replaced. Rows named Massgate_<Kind>_<CH> and Massgate_Gate are legacy items from earlier builds, kept without recipes so placed gates keep loading.",
-    "channels": ["Alpha", "Beta", "Gamma"],
+    "channels": [
+        "Alpha",
+        "Beta",
+        "Gamma"
+    ],
     "tables": [
         {
             "table": "Items/D_ItemsStatic.json",
             "add": [
                 {
                     "Name": "Massgate_Anchor",
-                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Anchor" },
-                    "Interactable": { "RowName": "Massgate_Gate" },
-                    "Focusable": { "RowName": "Focusable_1H" },
-                    "Highlightable": { "RowName": "Generic" },
-                    "Actionable": { "RowName": "Deployable" },
-                    "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Anchor" },
-                    "Durable": { "RowName": "Deployable_5000" },
-                    "Decayable": { "RowName": "Decay_10_Minutes" },
-                    "Weight": { "RowName": "HeavyDeployable" },
-                    "Resource": { "RowName": "Massgate_Anchor" },
-                    "Audio": { "RowName": "MetalDeployable" },
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Anchor"
+                    },
+                    "Interactable": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_5000"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "HeavyDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
                         "GameplayTags": [
-                            { "TagName": "Traits.Meshable" },
-                            { "TagName": "Traits.Itemable" },
-                            { "TagName": "Traits.Interactable" },
-                            { "TagName": "Traits.Highlightable" },
-                            { "TagName": "Traits.Actionable" },
-                            { "TagName": "Traits.Usable" },
-                            { "TagName": "Traits.Deployable" },
-                            { "TagName": "Traits.Durable" }
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            }
                         ],
                         "ParentTags": []
                     }
                 },
                 {
                     "Name": "Massgate_Resonator",
-                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Resonator" },
-                    "Interactable": { "RowName": "Massgate_Gate" },
-                    "Focusable": { "RowName": "Focusable_1H" },
-                    "Highlightable": { "RowName": "Generic" },
-                    "Actionable": { "RowName": "Deployable" },
-                    "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Resonator" },
-                    "Durable": { "RowName": "Deployable_2500" },
-                    "Decayable": { "RowName": "Decay_10_Minutes" },
-                    "Weight": { "RowName": "MediumDeployable" },
-                    "Resource": { "RowName": "Massgate_Resonator" },
-                    "Audio": { "RowName": "MetalDeployable" },
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Resonator"
+                    },
+                    "Interactable": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Massgate_Resonator"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_2500"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "MediumDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Massgate_Resonator"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
                         "GameplayTags": [
-                            { "TagName": "Traits.Meshable" },
-                            { "TagName": "Traits.Itemable" },
-                            { "TagName": "Traits.Interactable" },
-                            { "TagName": "Traits.Highlightable" },
-                            { "TagName": "Traits.Actionable" },
-                            { "TagName": "Traits.Usable" },
-                            { "TagName": "Traits.Deployable" },
-                            { "TagName": "Traits.Durable" }
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            }
                         ],
                         "ParentTags": []
                     }
@@ -70,8 +158,18 @@
         {
             "table": "Items/D_ItemTemplate.json",
             "add": [
-                { "Name": "Massgate_Anchor", "ItemStaticData": { "RowName": "Massgate_Anchor" } },
-                { "Name": "Massgate_Resonator", "ItemStaticData": { "RowName": "Massgate_Resonator" } }
+                {
+                    "Name": "Massgate_Anchor",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Anchor"
+                    }
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Resonator"
+                    }
+                }
             ]
         },
         {
@@ -80,7 +178,7 @@
                 {
                     "Name": "Item_Massgate_Anchor",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-DisplayName\", \"Massgate Anchor Lattice\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Anchors lock to the shared grid of the base, so any number of them can stand side by side. Needs heavy power. Tune the channel on the placed lattice. Outbound transits burn Exotics; inbound ones are carried by the anchor's own mass.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-FlavorText\", \"Exotics do not move through space. Space moves around them. UDA Field Manual, addendum 7, classified.\")",
                     "Weight": 40000,
@@ -89,7 +187,7 @@
                 {
                     "Name": "Item_Massgate_Resonator",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-DisplayName\", \"Massgate Resonator\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice, just enough to phase-lock to one Anchor on the channel you tune it to. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
                     "Weight": 15000,
@@ -104,60 +202,144 @@
             "add": [
                 {
                     "Name": "Massgate_Anchor_{CH}",
-                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Anchor_{CH}" },
-                    "Interactable": { "RowName": "Massgate_Gate" },
-                    "Focusable": { "RowName": "Focusable_1H" },
-                    "Highlightable": { "RowName": "Generic" },
-                    "Actionable": { "RowName": "Deployable" },
-                    "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Anchor" },
-                    "Durable": { "RowName": "Deployable_5000" },
-                    "Decayable": { "RowName": "Decay_10_Minutes" },
-                    "Weight": { "RowName": "HeavyDeployable" },
-                    "Resource": { "RowName": "Massgate_Anchor" },
-                    "Audio": { "RowName": "MetalDeployable" },
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Anchor_{CH}"
+                    },
+                    "Interactable": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_5000"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "HeavyDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
                         "GameplayTags": [
-                            { "TagName": "Traits.Meshable" },
-                            { "TagName": "Traits.Itemable" },
-                            { "TagName": "Traits.Interactable" },
-                            { "TagName": "Traits.Highlightable" },
-                            { "TagName": "Traits.Actionable" },
-                            { "TagName": "Traits.Usable" },
-                            { "TagName": "Traits.Deployable" },
-                            { "TagName": "Traits.Durable" }
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            }
                         ],
                         "ParentTags": []
                     }
                 },
                 {
                     "Name": "Massgate_Resonator_{CH}",
-                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Resonator_{CH}" },
-                    "Interactable": { "RowName": "Massgate_Gate" },
-                    "Focusable": { "RowName": "Focusable_1H" },
-                    "Highlightable": { "RowName": "Generic" },
-                    "Actionable": { "RowName": "Deployable" },
-                    "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Resonator" },
-                    "Durable": { "RowName": "Deployable_2500" },
-                    "Decayable": { "RowName": "Decay_10_Minutes" },
-                    "Weight": { "RowName": "MediumDeployable" },
-                    "Resource": { "RowName": "Massgate_Resonator" },
-                    "Audio": { "RowName": "MetalDeployable" },
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Resonator_{CH}"
+                    },
+                    "Interactable": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Massgate_Resonator"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_2500"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "MediumDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Massgate_Resonator"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
                         "GameplayTags": [
-                            { "TagName": "Traits.Meshable" },
-                            { "TagName": "Traits.Itemable" },
-                            { "TagName": "Traits.Interactable" },
-                            { "TagName": "Traits.Highlightable" },
-                            { "TagName": "Traits.Actionable" },
-                            { "TagName": "Traits.Usable" },
-                            { "TagName": "Traits.Deployable" },
-                            { "TagName": "Traits.Durable" }
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            }
                         ],
                         "ParentTags": []
                     }
@@ -168,8 +350,18 @@
             "table": "Items/D_ItemTemplate.json",
             "per_channel": true,
             "add": [
-                { "Name": "Massgate_Anchor_{CH}", "ItemStaticData": { "RowName": "Massgate_Anchor_{CH}" } },
-                { "Name": "Massgate_Resonator_{CH}", "ItemStaticData": { "RowName": "Massgate_Resonator_{CH}" } }
+                {
+                    "Name": "Massgate_Anchor_{CH}",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Anchor_{CH}"
+                    }
+                },
+                {
+                    "Name": "Massgate_Resonator_{CH}",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Resonator_{CH}"
+                    }
+                }
             ]
         },
         {
@@ -179,7 +371,7 @@
                 {
                     "Name": "Item_Massgate_Anchor_{CH}",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor_{CH}-DisplayName\", \"Massgate Anchor Lattice (legacy {CH})\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor_{CH}-Description\", \"An early Anchor from before channels could be tuned. Pick it up and place a current Anchor Lattice instead.\")",
                     "Weight": 40000,
                     "MaxStack": 1
@@ -187,7 +379,7 @@
                 {
                     "Name": "Item_Massgate_Resonator_{CH}",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator_{CH}-DisplayName\", \"Massgate Resonator (legacy {CH})\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator_{CH}-Description\", \"An early Resonator from before channels could be tuned. Pick it up and place a current Resonator instead.\")",
                     "Weight": 15000,
                     "MaxStack": 1
@@ -200,30 +392,72 @@
             "add": [
                 {
                     "Name": "Massgate_Gate",
-                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Gate" },
-                    "Interactable": { "RowName": "Massgate_Gate" },
-                    "Focusable": { "RowName": "Focusable_1H" },
-                    "Highlightable": { "RowName": "Generic" },
-                    "Actionable": { "RowName": "Deployable" },
-                    "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Anchor" },
-                    "Durable": { "RowName": "Deployable_5000" },
-                    "Decayable": { "RowName": "Decay_10_Minutes" },
-                    "Weight": { "RowName": "HeavyDeployable" },
-                    "Resource": { "RowName": "Massgate_Anchor" },
-                    "Audio": { "RowName": "MetalDeployable" },
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Gate"
+                    },
+                    "Interactable": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_5000"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "HeavyDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Massgate_Anchor"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
                         "GameplayTags": [
-                            { "TagName": "Traits.Meshable" },
-                            { "TagName": "Traits.Itemable" },
-                            { "TagName": "Traits.Interactable" },
-                            { "TagName": "Traits.Highlightable" },
-                            { "TagName": "Traits.Actionable" },
-                            { "TagName": "Traits.Usable" },
-                            { "TagName": "Traits.Deployable" },
-                            { "TagName": "Traits.Durable" }
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            }
                         ],
                         "ParentTags": []
                     }
@@ -233,7 +467,12 @@
         {
             "table": "Items/D_ItemTemplate.json",
             "add": [
-                { "Name": "Massgate_Gate", "ItemStaticData": { "RowName": "Massgate_Gate" } }
+                {
+                    "Name": "Massgate_Gate",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Gate"
+                    }
+                }
             ]
         },
         {
@@ -242,7 +481,7 @@
                 {
                     "Name": "Item_Massgate_Gate",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-DisplayName\", \"Massgate Lattice (legacy prototype)\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-Description\", \"An early prototype lattice. Behaves as an Anchor. Pick it up and place a current Anchor Lattice instead.\")",
                     "Weight": 40000,
                     "MaxStack": 1
@@ -254,13 +493,23 @@
             "add": [
                 {
                     "Name": "Massgate_Anchor",
-                    "Variants": [ { "RowName": "Massgate_Anchor", "DataTableName": "D_DeployableSetup" } ],
+                    "Variants": [
+                        {
+                            "RowName": "Massgate_Anchor",
+                            "DataTableName": "D_DeployableSetup"
+                        }
+                    ],
                     "EffectedByWeather": false,
                     "bMustBeOutside": true
                 },
                 {
                     "Name": "Massgate_Resonator",
-                    "Variants": [ { "RowName": "Massgate_Resonator", "DataTableName": "D_DeployableSetup" } ],
+                    "Variants": [
+                        {
+                            "RowName": "Massgate_Resonator",
+                            "DataTableName": "D_DeployableSetup"
+                        }
+                    ],
                     "EffectedByWeather": false,
                     "bMustBeOutside": true
                 }
@@ -272,7 +521,7 @@
                 {
                     "Name": "Massgate_Anchor",
                     "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
-                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
                     "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Anchor-DeployableName\", \"Anchor Lattice\")",
                     "PreviewStaticMesh": "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
                     "DeployedSound": "/Game/FMOD/Events/SFX/D_Buildables/SFX_DEPLOY_METAL_ITEM.SFX_DEPLOY_METAL_ITEM",
@@ -282,7 +531,7 @@
                 {
                     "Name": "Massgate_Resonator",
                     "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
-                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
                     "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Resonator-DeployableName\", \"Resonator\")",
                     "PreviewStaticMesh": "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
                     "DeployedSound": "/Game/FMOD/Events/SFX/D_Buildables/SFX_DEPLOY_METAL_ITEM.SFX_DEPLOY_METAL_ITEM",
@@ -294,15 +543,39 @@
         {
             "table": "Traits/D_Resource.json",
             "add": [
-                { "Name": "Massgate_Anchor", "bHasEnergyConnection": true, "EnergyFlow": { "RowName": "Massgate_Anchor" } },
-                { "Name": "Massgate_Resonator", "bHasEnergyConnection": true, "EnergyFlow": { "RowName": "Massgate_Resonator" } }
+                {
+                    "Name": "Massgate_Anchor",
+                    "bHasEnergyConnection": true,
+                    "EnergyFlow": {
+                        "RowName": "Massgate_Anchor"
+                    }
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "bHasEnergyConnection": true,
+                    "EnergyFlow": {
+                        "RowName": "Massgate_Resonator"
+                    }
+                }
             ]
         },
         {
             "table": "Traits/D_Energy.json",
             "add": [
-                { "Name": "Massgate_Anchor", "AutoActivate": true, "ResourceFlowRate": 2500, "AutoShutoffFlowPercent": 99, "bAllowAutoRestart": true },
-                { "Name": "Massgate_Resonator", "AutoActivate": true, "ResourceFlowRate": 500, "AutoShutoffFlowPercent": 99, "bAllowAutoRestart": true }
+                {
+                    "Name": "Massgate_Anchor",
+                    "AutoActivate": true,
+                    "ResourceFlowRate": 2500,
+                    "AutoShutoffFlowPercent": 99,
+                    "bAllowAutoRestart": true
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "AutoActivate": true,
+                    "ResourceFlowRate": 500,
+                    "AutoShutoffFlowPercent": 99,
+                    "bAllowAutoRestart": true
+                }
             ]
         },
         {
@@ -337,16 +610,40 @@
                 {
                     "Name": "Massgate_Gate",
                     "WorldPressInteracts": [
-                        { "InteractionRow": { "RowName": "Massgate_Activate", "DataTableName": "D_Interactions" }, "Tag": "" }
+                        {
+                            "InteractionRow": {
+                                "RowName": "Massgate_Activate",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
                     ],
                     "WorldHoldInteracts": [
-                        { "InteractionRow": { "RowName": "Interact_Toggle_Device_On", "DataTableName": "D_Interactions" }, "Tag": "" }
+                        {
+                            "InteractionRow": {
+                                "RowName": "Interact_Toggle_Device_On",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
                     ],
                     "WorldAltPressInteracts": [
-                        { "InteractionRow": { "RowName": "Massgate_Tune", "DataTableName": "D_Interactions" }, "Tag": "" }
+                        {
+                            "InteractionRow": {
+                                "RowName": "Massgate_Tune",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
                     ],
                     "WorldAltHoldInteracts": [
-                        { "InteractionRow": { "RowName": "Pickup_Deployable", "DataTableName": "D_Interactions" }, "Tag": "" }
+                        {
+                            "InteractionRow": {
+                                "RowName": "Pickup_Deployable",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
                     ]
                 }
             ]
@@ -373,39 +670,145 @@
             "add": [
                 {
                     "Name": "Massgate_Anchor",
-                    "Requirement": { "RowName": "Massgate_Gate" },
+                    "Requirement": {
+                        "RowName": "Massgate_Gate"
+                    },
                     "RequiredMillijoules": 300000,
-                    "RecipeSets": [ { "RowName": "Fabricator", "DataTableName": "D_RecipeSets" } ],
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
                     "Inputs": [
-                        { "Element": { "RowName": "MetaResource", "DataTableName": "D_ItemsStatic" }, "Count": 200 },
-                        { "Element": { "RowName": "Electronics", "DataTableName": "D_ItemsStatic" }, "Count": 40 },
-                        { "Element": { "RowName": "Composites", "DataTableName": "D_ItemsStatic" }, "Count": 60 },
-                        { "Element": { "RowName": "Copper_Wire", "DataTableName": "D_ItemsStatic" }, "Count": 100 },
-                        { "Element": { "RowName": "Platinum_Ingot", "DataTableName": "D_ItemsStatic" }, "Count": 30 },
-                        { "Element": { "RowName": "Powerbank", "DataTableName": "D_ItemsStatic" }, "Count": 4 }
+                        {
+                            "Element": {
+                                "RowName": "MetaResource",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 200
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Electronics",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 40
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Composites",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 60
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 100
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Platinum_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 30
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Powerbank",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 4
+                        }
                     ],
                     "Outputs": [
-                        { "Element": { "RowName": "Massgate_Anchor", "DataTableName": "D_ItemTemplate" }, "Count": 1, "DynamicProperties": [], "Alterations": [] }
+                        {
+                            "Element": {
+                                "RowName": "Massgate_Anchor",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
                     ],
-                    "Audio": { "RowName": "MachiningBench" }
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
                 },
                 {
                     "Name": "Massgate_Resonator",
-                    "Requirement": { "RowName": "Massgate_Gate" },
+                    "Requirement": {
+                        "RowName": "Massgate_Gate"
+                    },
                     "RequiredMillijoules": 120000,
-                    "RecipeSets": [ { "RowName": "Fabricator", "DataTableName": "D_RecipeSets" } ],
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
                     "Inputs": [
-                        { "Element": { "RowName": "MetaResource", "DataTableName": "D_ItemsStatic" }, "Count": 60 },
-                        { "Element": { "RowName": "Electronics", "DataTableName": "D_ItemsStatic" }, "Count": 15 },
-                        { "Element": { "RowName": "Composites", "DataTableName": "D_ItemsStatic" }, "Count": 20 },
-                        { "Element": { "RowName": "Copper_Wire", "DataTableName": "D_ItemsStatic" }, "Count": 40 },
-                        { "Element": { "RowName": "Platinum_Ingot", "DataTableName": "D_ItemsStatic" }, "Count": 10 },
-                        { "Element": { "RowName": "Powerbank", "DataTableName": "D_ItemsStatic" }, "Count": 1 }
+                        {
+                            "Element": {
+                                "RowName": "MetaResource",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 60
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Electronics",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 15
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Composites",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 20
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 40
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Platinum_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 10
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Powerbank",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 1
+                        }
                     ],
                     "Outputs": [
-                        { "Element": { "RowName": "Massgate_Resonator", "DataTableName": "D_ItemTemplate" }, "Count": 1, "DynamicProperties": [], "Alterations": [] }
+                        {
+                            "Element": {
+                                "RowName": "Massgate_Resonator",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
                     ],
-                    "Audio": { "RowName": "MachiningBench" }
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
                 }
             ]
         },
@@ -414,11 +817,27 @@
             "add": [
                 {
                     "Name": "Massgate_Gate",
-                    "ExtraData": { "RowName": "Item_Massgate_Anchor", "DataTableName": "D_Itemable" },
-                    "TalentTree": { "RowName": "Blueprint_T4_Fabricator" },
-                    "Position": { "X": 4550, "Y": 700 },
-                    "Size": { "X": 184, "Y": 184 },
-                    "RequiredTalents": [ { "RowName": "Exotic_Processor", "DataTableName": "D_Talents" } ],
+                    "ExtraData": {
+                        "RowName": "Item_Massgate_Anchor",
+                        "DataTableName": "D_Itemable"
+                    },
+                    "TalentTree": {
+                        "RowName": "Blueprint_T4_Fabricator"
+                    },
+                    "Position": {
+                        "X": 4550,
+                        "Y": 700
+                    },
+                    "Size": {
+                        "X": 184,
+                        "Y": 184
+                    },
+                    "RequiredTalents": [
+                        {
+                            "RowName": "Exotic_Processor",
+                            "DataTableName": "D_Talents"
+                        }
+                    ],
                     "DrawMethodOverride": "XThenY"
                 }
             ]
