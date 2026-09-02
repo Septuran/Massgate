@@ -468,6 +468,15 @@ local function loadEvent(path)
     return nil
 end
 
+local function eventLength(ev)
+    local n = -1
+    pcall(function()
+        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+        if valid(lib) then n = tonumber(lib:GetEventLengthInSeconds(ev)) or -1 end
+    end)
+    return n
+end
+
 local function transformAt(loc)
     return {
         Rotation    = { X = 0, Y = 0, Z = 0, W = 1 },
@@ -509,14 +518,11 @@ local chargeLength = nil
 local function chargeSeconds()
     if chargeLength then return chargeLength end
     local seconds = CONFIG.ChargeSeconds
-    pcall(function()
-        local ev = loadEvent(CONFIG.Sounds.Charge)
-        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
-        if ev and valid(lib) then
-            local n = tonumber(lib:GetEventLengthInSeconds(ev))
-            if n and n >= 1 and n <= 10 then seconds = n end
-        end
-    end)
+    local ev = loadEvent(CONFIG.Sounds.Charge)
+    if ev then
+        local n = eventLength(ev)
+        if n >= 1 and n <= 10 then seconds = n end
+    end
     chargeLength = seconds
     dbg("charge-up length: %.2f s", seconds)
     return seconds
@@ -1225,13 +1231,50 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
             Ar:Log("[Massgate] usage: massgate sfx </Game/FMOD/Events/SFX/....Name>  (needs at least one placed gate)")
             return true
         end
+        if not path:find("^/Game/") then
+            -- Short form: any unique substring of an event name from sfx_events.lua.
+            local okList, list = pcall(require, "sfx_events")
+            local hits = {}
+            if okList and type(list) == "table" then
+                for _, full in ipairs(list) do
+                    if full:lower():find(path:lower(), 1, true) then hits[#hits + 1] = full end
+                end
+            end
+            if #hits ~= 1 then
+                Ar:Log(string.format("[Massgate] '%s' matches %d events; be more specific", path, #hits))
+                for i = 1, math.min(#hits, 15) do Ar:Log("   " .. hits[i]) end
+                return true
+            end
+            path = hits[1]
+        end
         local ev = loadEvent(path)
         if not ev then Ar:Log("[Massgate] could not load " .. path) return true end
         local ok, err = pcall(function()
             local fmod = StaticFindObject("/Script/FMODStudio.Default__FMODBlueprintStatics")
             fmod:PlayEvent2D(ctx, ev, true)
         end)
-        Ar:Log(string.format("[Massgate] sfx %s -> %s", path, ok and "played" or tostring(err)))
+        Ar:Log(string.format("[Massgate] sfx %s (%.2f s) -> %s", path, eventLength(ev), ok and "played" or tostring(err)))
+        return true
+    end
+    if Parameters[1] == "sfxscan" then
+        -- Load every event whose path contains the substring and print its length, so a sample
+        -- decoded from the banks can be matched to its event by duration. Diagnostic only.
+        local needle = Parameters[2]
+        if not needle then Ar:Log("[Massgate] usage: massgate sfxscan <substring of event path>") return true end
+        local okList, list = pcall(require, "sfx_events")
+        if not okList or type(list) ~= "table" then Ar:Log("[Massgate] sfx_events.lua missing") return true end
+        local n, shown = 0, 0
+        for _, full in ipairs(list) do
+            if full:lower():find(needle:lower(), 1, true) then
+                n = n + 1
+                local ev = loadEvent(full)
+                local len = ev and eventLength(ev) or -1
+                local short = full:match("/SFX/(.*)%.[^.]*$") or full
+                log("sfxscan %6.2f s  %s", len, short)
+                if shown < 40 then Ar:Log(string.format("  %6.2f s  %s", len, short)) shown = shown + 1 end
+            end
+        end
+        Ar:Log(string.format("[Massgate] sfxscan '%s': %d event(s), all in UE4SS.log", needle, n))
         return true
     end
     if Parameters[1] == "power" then
