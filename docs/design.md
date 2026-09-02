@@ -46,9 +46,10 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Resonator placement | No other gate of any kind within 500 m, its own anchor included | Stops short hops and gate spam; forces outposts far apart and far from base |
 | Charge-up | 3 s after engaging; you must stay within 8 m of the gate | Gives the transit weight and a window to abort |
 | Outbound trip | 8 Exotics drawn from the anchor's own buffer, coupler or not | Pushing out is the expensive choice; the lattice is loaded like a furnace |
-| Panel | Hold interact opens six slots: four Exotics-only, one module, one Tuning Crystal | The game's storage panel doubles as fuel bay, upgrade bay and tuning control |
+| Panel | Hold interact opens seven slots: four Exotics-only, a module bay, one Tuning Crystal, a second module bay | The game's storage panel doubles as fuel bay, upgrade bay and tuning control |
 | Tuning Crystal | Cheap per-colour item; no crystal means no channel | The channel control lives in the panel, no extra UI |
-| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; no extra Exotics (a surcharge was tried and found confusing) |
+| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; no extra Exotics (a surcharge was tried and found confusing). Anything wired to the coupled Resonator draws from the anchor's grid, up to 5,000 units |
+| Channel Amplifier | Module in the anchor's other bay | Raises the relay cap from 5,000 to 20,000 units; does nothing without a coupler |
 | Inbound trip | Free, resonator to anchor | The anchor pulls you home |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
 | Tames | Your mounts and pets set to Follow within 8 m travel with you | F dismounts, so you engage on foot; only followers travel, so a farm stays put |
@@ -85,7 +86,7 @@ Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 | D_DeployableSetup | Massgate_<K> | Which Blueprint actor and preview mesh to spawn |
 | D_Resource, D_Energy | Massgate_<K> | Electric connection and draw (2500 / 500) |
 | D_Interactable | Massgate_Gate | Press = engage, hold = open the panel, alt-press = power on/off, alt-hold = pick up (shared) |
-| D_Inventory, D_InventoryInfo | Massgate_Buffer | Slots 0-3 Exotics-only (Any_Meta), slot 4 module-only, slot 5 crystal-only (reusing the T4/T3 communicator-upgrade tag queries) |
+| D_Inventory, D_InventoryInfo | Massgate_Buffer | Slots 0-3 Exotics-only (Any_Meta), slots 4 and 6 module-only, slot 5 crystal-only (reusing the T4/T3 communicator-upgrade tag queries) |
 | D_Meshable | Mesh_Massgate_<K>, Mesh_Massgate_Crystal | The deployed container renders the item's Meshable mesh, so this is the gate's look: landing pad, laser uplink, exotic shard |
 | D_ItemsStatic etc. | Massgate_Coupler, Massgate_Crystal_<CH> | The Phase Coupler module and the three Tuning Crystals, with Fabricator recipes |
 | D_Interactions | Massgate_Activate | "Engage Massgate" on the button-trigger behaviour |

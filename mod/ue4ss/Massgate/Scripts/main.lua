@@ -41,7 +41,9 @@ local CONFIG = {
     Channels             = { "Red", "Green", "Blue" },  -- overridden from config.lua
     ExoticsRow           = "MetaResource",
     BufferSlots          = 4,                          -- slots 0-3 hold Exotics
-    ModuleSlot           = 4,
+    ModuleSlot           = 4,                          -- first module bay
+    ModuleSlots          = { 4, 6 },                   -- both bays accept any Massgate module
+    AmplifierRow         = "Massgate_Amplifier",
     TuningSlot           = 5,
     CrystalRowPrefix     = "Massgate_Crystal_",        -- Massgate_Crystal_<Colour>
     CouplerRow           = "Massgate_Coupler",
@@ -63,6 +65,12 @@ local CONFIG = {
     TraceDownCm          = 800,
     ExoticsOutbound      = 8,                          -- flat; the coupler adds nothing
     ExoticsInbound       = 0,
+    -- Power relay: a coupled Anchor pushes energy down the colour channel to its Resonator's grid.
+    Relay                = true,
+    RelayMs              = 5000,                       -- registry only, a few property reads per gate
+    RelayResource        = "Energy",                   -- FIcarusResourcesEnum row
+    RelayBaseRate        = 5000,                       -- Phase Coupler alone
+    RelayUpgradedRate    = 20000,                      -- with a Channel Amplifier in the other bay
     -- Looks: the crate actor draws its own box through its DeployableSK skeletal mesh (plus two
     -- static-mesh crate parts). Hide those by name and put our mesh in the DeployableSM slot.
     -- (Walking the whole object table to find them froze the game for ~2 s per gate.)
@@ -396,8 +404,23 @@ local function consumeExotics(inv, amount)
     return amount - left
 end
 
+-- Module bays: the rows slotted in any bay, by name.
+local function modulesOf(anchor)
+    local inv, found = panelOf(anchor), {}
+    for _, slot in ipairs(CONFIG.ModuleSlots) do
+        local row = rowInSlot(inv, slot)
+        if row then found[row] = true end
+    end
+    return found
+end
+
 local function hasCoupler(anchor)
-    return rowInSlot(panelOf(anchor), CONFIG.ModuleSlot) == CONFIG.CouplerRow
+    return modulesOf(anchor)[CONFIG.CouplerRow] == true
+end
+
+-- Channel bandwidth in power units: what a coupled anchor may push to its resonator's grid.
+local function bandwidthOf(anchor)
+    return modulesOf(anchor)[CONFIG.AmplifierRow] and CONFIG.RelayUpgradedRate or CONFIG.RelayBaseRate
 end
 
 ------------------------------------------------------------------------------------------
@@ -823,6 +846,138 @@ local function performTransit(gate, kind, channel, player, partner)
     tell(player, table.concat(parts, " "))
 end
 
+------------------------------------------------------------------------------------------
+-- Power relay. Every RelayMs, for each coupled Anchor with a tuned partner: read the partner's
+-- grid (supply/demand), size a dynamic production source on the Resonator to the shortfall,
+-- and mirror it as a dynamic consumption source on the Anchor, capped by the channel bandwidth.
+-- Registry reads only: no world scans. Any failure of the native call disables the relay
+-- for the session and logs it.
+------------------------------------------------------------------------------------------
+
+local resCompCache = {} -- gate full name -> UResourceComponent
+local function resourceComponentOf(gate)
+    local key = fullName(gate)
+    local cached = resCompCache[key]
+    if cached and cached:IsValid() then return cached end
+    local found = nil
+    pcall(function()
+        local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
+        local comps = gate:K2_GetComponentsByClass(cls)
+        if #comps > 0 then found = unwrap(comps[1]) end
+    end)
+    if valid(found) then resCompCache[key] = found end
+    return found
+end
+
+local function energyNetworkOf(res)
+    local net = nil
+    pcall(function()
+        local energy = res.EnergyComponent:Get()
+        if valid(energy) then net = energy:GetConnectedNetwork() end
+    end)
+    if valid(net) then return net end
+    return nil
+end
+
+local function networkNumbers(net)
+    local supply, demand = 0, 0
+    if not net then return supply, demand end
+    pcall(function()
+        supply = tonumber(net.LastTotalSupply) or 0
+        demand = tonumber(net.LastTotalDemand) or 0
+    end)
+    return supply, demand
+end
+
+local relayState = {}      -- anchor full name -> { rate, resonatorName, resRes, resonator, cap, note }
+local relayFailed = false
+local relayFirstCall = true
+
+local function setFlow(res, source, rate, consume)
+    if relayFirstCall then
+        relayFirstCall = false
+        log("relay: first dynamic flow call (%s, rate %d, consume=%s)", shortName(source), rate, tostring(consume))
+    end
+    return pcall(function()
+        res:AddOrModifyDynamicFlowSource(source, { Value = FName(CONFIG.RelayResource) }, rate, consume)
+    end)
+end
+
+-- Push (rate) to the pair; zero the previous resonator first if the pairing changed.
+local function pushRelay(state, anchor, resonator, rate)
+    local rRes = resonator and resourceComponentOf(resonator) or nil
+    if state.resRes and valid(state.resRes) and (not rRes or fullName(state.resRes) ~= fullName(rRes)) then
+        setFlow(state.resRes, state.resonator, 0, false)
+        state.resRes, state.resonator, state.resonatorName = nil, nil, nil
+    end
+    local ok1, err1, ok2, err2 = true, nil, true, nil
+    if rRes then ok1, err1 = setFlow(rRes, resonator, rate, false) end
+    local aRes = resourceComponentOf(anchor)
+    if aRes then ok2, err2 = setFlow(aRes, anchor, rate, true) end
+    if not (ok1 and ok2) then
+        relayFailed = true
+        log("relay DISABLED for this session: dynamic flow call failed (%s / %s)", tostring(err1), tostring(err2))
+        return false
+    end
+    state.rate = rate
+    if rRes then state.resRes, state.resonator, state.resonatorName = rRes, resonator, fullName(resonator) end
+    return true
+end
+
+local function relayTick()
+    if not CONFIG.Relay or relayFailed or not hooked then return end
+    local gates = allGates()
+    for _, entry in ipairs(gates) do
+        if entry.kind == "Anchor" then
+            local anchor = entry.actor
+            local key = fullName(anchor)
+            local state = relayState[key] or { rate = 0 }
+            relayState[key] = state
+            local resonator, rate, note = nil, 0, "no coupler"
+            if hasCoupler(anchor) then
+                note = "no partner"
+                local partner = entry.channel and resolvePartner(anchor, "Anchor", entry.channel, gates) or nil
+                if partner then
+                    resonator = partner.actor
+                    if not (CONFIG.DevAnchorsPowered or isPowered(anchor)) then
+                        note = "anchor unpowered"
+                    else
+                        local rRes = resourceComponentOf(resonator)
+                        local net = rRes and energyNetworkOf(rRes) or nil
+                        if not net then
+                            note = "resonator has no grid"
+                        else
+                            local supply, demand = networkNumbers(net)
+                            local own = (state.resonatorName == fullName(resonator)) and state.rate or 0
+                            local need = math.max(0, demand - (supply - own))
+                            local cap = bandwidthOf(anchor)
+                            local avail = cap
+                            if not CONFIG.DevAnchorsPowered then
+                                local aNet = energyNetworkOf(resourceComponentOf(anchor))
+                                if aNet then
+                                    local aSupply, aDemand = networkNumbers(aNet)
+                                    avail = math.min(cap, math.max(0, aSupply - (aDemand - state.rate)))
+                                end
+                            end
+                            rate = math.floor(math.min(need, avail))
+                            state.cap = cap
+                            note = string.format("outpost demand %d, own supply %d, cap %d", demand, supply - own, cap)
+                        end
+                    end
+                end
+            end
+            local resonatorChanged = (resonator and fullName(resonator) or nil) ~= state.resonatorName
+            if rate ~= state.rate or resonatorChanged then
+                if pushRelay(state, anchor, resonator, rate) then
+                    log("relay %s [%s] -> %s: %d units (%s)", shortName(anchor), tostring(entry.channel),
+                        resonator and shortName(resonator) or "-", rate, note)
+                end
+            end
+            state.note = note
+        end
+    end
+end
+
 local function engage(gate, player)
     local kind, channel = identify(gate)
     local key = fullName(gate)
@@ -945,6 +1100,16 @@ LoopAsync(CONFIG.IconRefreshMs, function()
     return false
 end)
 
+LoopAsync(CONFIG.RelayMs, function()
+    if hooked then
+        ExecuteInGameThread(function()
+            local ok, err = pcall(relayTick)
+            if not ok then log("relay tick failed: %s", tostring(err)) end
+        end)
+    end
+    return false
+end)
+
 for _, bpPath in ipairs(CONFIG.GateBlueprints) do
     pcall(NotifyOnNewObject, bpPath, function(actor)
         ExecuteWithDelay(500, function()
@@ -964,6 +1129,18 @@ end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
+    if Parameters[1] == "power" then
+        Ar:Log(string.format("[Massgate] relay enabled=%s failed=%s", tostring(CONFIG.Relay), tostring(relayFailed)))
+        for _, entry in ipairs(gates) do
+            local res = resourceComponentOf(entry.actor)
+            local supply, demand = networkNumbers(res and energyNetworkOf(res) or nil)
+            local st = relayState[fullName(entry.actor)]
+            Ar:Log(string.format("  %s [%s] grid supply=%d demand=%d powered=%s%s", entry.kind, tostring(entry.channel),
+                supply, demand, tostring(isPowered(entry.actor)),
+                st and string.format("  relay=%d cap=%s (%s)", st.rate, tostring(st.cap), tostring(st.note)) or ""))
+        end
+        return true
+    end
     if Parameters[1] == "dump" then
         for _, entry in ipairs(gates) do dumpComponents(entry.actor) end
         Ar:Log(string.format("[Massgate] dumped %d gate(s) to UE4SS.log", #gates))
@@ -973,7 +1150,7 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
     for i, entry in ipairs(gates) do
         Ar:Log(string.format("  #%d %s [%s] %s powered=%s exotics=%d coupler=%s", i, entry.kind, tostring(entry.channel),
             fmtLoc(locationOf(entry.actor)), tostring(isPowered(entry.actor)), (exoticsIn(panelOf(entry.actor))),
-            tostring(entry.kind == "Anchor" and hasCoupler(entry.actor))))
+            tostring(entry.kind == "Anchor" and hasCoupler(entry.actor)) .. (entry.kind == "Anchor" and modulesOf(entry.actor)[CONFIG.AmplifierRow] and "+amp" or "")))
     end
     return true
 end)
