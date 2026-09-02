@@ -134,6 +134,11 @@ def expand_channels(patches: dict) -> dict:
                 if channel not in colors:
                     sys.exit(f"!! no channel_colors entry for {channel}")
                 return colors[channel]
+            if node == "{CH_ICON}":
+                icons = patches.get("channel_icons", {})
+                if channel not in icons:
+                    sys.exit(f"!! no channel_icons entry for {channel}")
+                return icons[channel]
             return node.replace("{CH}", channel)
         if isinstance(node, dict):
             return {k: fill(v, channel) for k, v in node.items()}

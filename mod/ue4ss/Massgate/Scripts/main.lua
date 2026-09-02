@@ -308,15 +308,22 @@ local function isPowered(gate)
 end
 
 local function stackOf(item)
-    local count = 1
+    -- The game's own helper knows how stack sizes are stored.
+    local ok, count = pcall(function()
+        local lib = StaticFindObject("/Script/Icarus.Default__InventoryItemLibrary")
+        return lib:GetItemStackCount(item)
+    end)
+    if ok and tonumber(count) and tonumber(count) > 0 then return tonumber(count) end
+    -- Fallback: read the dynamic property directly.
+    local fallback = 1
     pcall(function()
         local dyn = item.ItemDynamicData
         for i = 1, #dyn do
             local entry = dyn[i]
-            if tonumber(entry.PropertyType) == CONFIG.StackProperty then count = entry.Value end
+            if tonumber(entry.PropertyType) == CONFIG.StackProperty then fallback = entry.Value end
         end
     end)
-    return count
+    return fallback
 end
 
 local function exoticsIn(inv)
@@ -395,6 +402,9 @@ local function loadMesh(kind)
     return nil
 end
 
+-- Component names the crate Blueprint uses for its box (from the class dump).
+local CRATE_MESH_COMPONENTS = { "SM_DEP_Crate_SML_Metal", "SM_DEP_Crate_SML_Metal1" }
+
 local function applyLook(actor, kind)
     local key = fullName(actor)
     if lookDone[key] then return end
@@ -404,22 +414,45 @@ local function applyLook(actor, kind)
         local slot = actor.DeployableSM
         if not valid(slot) then return log("no DeployableSM on %s", shortName(actor)) end
         local slotName = fullName(slot)
-        local hidden = 0
+        local report = {}
+
+        -- 1. The crate's own box components: destroy them outright.
+        for _, propName in ipairs(CRATE_MESH_COMPONENTS) do
+            pcall(function()
+                local comp = actor[propName]
+                if valid(comp) then
+                    comp:SetVisibility(false, true)
+                    comp:SetHiddenInGame(true, true)
+                    comp:K2_DestroyComponent(actor)
+                    report[#report + 1] = propName .. ":destroyed"
+                end
+            end)
+        end
+
+        -- 2. Everything else that renders a mesh, except our slot: hide.
         for _, clsPath in ipairs({ "/Script/Engine.StaticMeshComponent", "/Script/Engine.SkeletalMeshComponent" }) do
             local comps = actor:K2_GetComponentsByClass(StaticFindObject(clsPath))
             for i = 1, #comps do
                 local comp = comps[i]
                 if fullName(comp) ~= slotName then
+                    local before = nil
+                    pcall(function() before = comp:IsVisible() end)
                     pcall(function() comp:SetVisibility(false, true) end)
-                    hidden = hidden + 1
+                    pcall(function() comp:SetHiddenInGame(true, true) end)
+                    if before then report[#report + 1] = shortName(comp) .. ":hidden" end
                 end
             end
         end
-        slot:SetStaticMesh(mesh)
+
+        -- 3. Our mesh into the slot. SetStaticMesh refuses on Static mobility, so make it movable.
+        pcall(function() slot:SetMobility(2) end) -- EComponentMobility::Movable
+        local set = slot:SetStaticMesh(mesh)
         slot:SetVisibility(true, true)
         pcall(function() slot:SetHiddenInGame(false, true) end)
-        lookDone[key] = true
-        dbg("%s look on %s: %d other mesh component(s) hidden", kind, shortName(actor), hidden)
+        report[#report + 1] = "slot:" .. shortName(slot) .. " set=" .. tostring(set)
+
+        if set ~= false then lookDone[key] = true end
+        dbg("%s look on %s: %s", kind, shortName(actor), table.concat(report, ", "))
     end)
     if not ok then log("applyLook failed: %s", tostring(err)) end
 end
@@ -444,27 +477,34 @@ local function findMapIcon(actor, compClass)
 end
 
 local function pointMapIcon(comp, rowName)
-    local viaLibrary = pcall(function()
+    local viaLibrary, libErr = pcall(function()
         local lib = StaticFindObject(CONFIG.MapIconsLibrary)
+        if not valid(lib) then error("map icons library not found") end
         comp.MapIconData = lib:MakeMapIcons(FName(rowName))
     end)
     if not viaLibrary then
+        dbg("map icon library path failed (%s); writing fields on %s", tostring(libErr), fullName(comp))
         comp.MapIconData.RowName = FName(rowName)
         local table = StaticFindObject(CONFIG.MapIconsTable)
         if valid(table) then comp.MapIconData.DataTable = table end
     end
 end
 
+local iconRetryAt = {} -- gate full name -> os.time() after which to try again
+
 local function updateMapIcon(actor, kind, channel)
     if not CONFIG.MapIcons then return end
     local row = iconRow(kind, channel)
     local key = fullName(actor)
     if iconState[key] == row then return end
+    if iconRetryAt[key] and os.time() < iconRetryAt[key] then return end
+    iconRetryAt[key] = os.time() + 30 -- on failure, do not spam: retry in 30 s
     local ok, err = pcall(function()
         local compClass = StaticFindObject(CONFIG.MapIconComponentClass)
         if not valid(compClass) then return log("map icon component class not found") end
         local comp = findMapIcon(actor, compClass)
         if comp then
+            dbg("reusing map icon component %s (class %s)", shortName(comp), fullName(comp:GetClass()))
             pcall(function() comp:TryRemoveMapIcon() end)
             pointMapIcon(comp, row)
             pcall(function() comp:TrySetupMapIcon() end)
@@ -477,6 +517,7 @@ local function updateMapIcon(actor, kind, channel)
             pcall(function() comp:TrySetupMapIcon() end)
         end
         iconState[key] = row
+        iconRetryAt[key] = nil
         dbg("map icon %s on %s", row, shortName(actor))
     end)
     if not ok then log("updateMapIcon failed: %s", tostring(err)) end
