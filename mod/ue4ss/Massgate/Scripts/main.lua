@@ -64,6 +64,12 @@ local CONFIG = {
     TraceDownCm          = 800,
     ExoticsOutbound      = 5,
     ExoticsInbound       = 0,
+    -- Looks: the crate actor draws its own box through components we cannot read from Lua, so we
+    -- hide every mesh component except the base class' DeployableSM slot and put our mesh there.
+    Meshes = {
+        Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
+        Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
+    },
     MapIcons             = true,
     MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
     MapIconsLibrary      = "/Script/Icarus.Default__MapIconsLibrary",
@@ -169,25 +175,67 @@ local function kindOf(actor)
     return nil
 end
 
--- The gate's own storage inventory (the panel).
+-- The gate's own storage inventory (the panel). UInventory objects are created by the gate's
+-- InventoryComponent; we find the one whose outer chain leads back to this gate.
+local panelCache = {}   -- gate full name -> UInventory
+local panelDebugged = false
+
+local function outerChainHits(obj, targetNames, depth)
+    local cur = obj
+    for _ = 1, depth do
+        local nxt = nil
+        pcall(function() nxt = cur:GetOuter() end)
+        if not (nxt and nxt:IsValid()) then return false end
+        if targetNames[fullName(nxt)] then return true end
+        cur = nxt
+    end
+    return false
+end
+
 local function panelOf(gate)
+    local key = fullName(gate)
+    local cached = panelCache[key]
+    if cached and cached:IsValid() then return cached end
     local found = nil
     pcall(function()
+        local targets = { [key] = true }
         local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
         local comps = gate:K2_GetComponentsByClass(cls)
-        if #comps == 0 then return end
-        local invComp = comps[1]
-        local ok, all = pcall(FindAllOf, "Inventory")
-        if not ok or not all then return end
-        for _, inv in ipairs(all) do
-            local outer = nil
-            pcall(function() outer = inv:GetOuter() end)
-            if outer and outer:IsValid() and fullName(outer) == fullName(invComp) then
-                found = inv
-                return
+        for i = 1, #comps do targets[fullName(comps[i])] = true end
+        -- First choice: the component's own map of inventories.
+        if #comps > 0 then
+            pcall(function()
+                comps[1].Inventories:ForEach(function(k, v)
+                    local inv = v:get()
+                    if not found and inv and inv:IsValid() then found = inv end
+                end)
+            end)
+        end
+        -- Fallback: every UInventory in the world whose outer chain hits the gate or its component.
+        if not found then
+            local ok, all = pcall(FindAllOf, "Inventory")
+            if ok and all then
+                for _, inv in ipairs(all) do
+                    if outerChainHits(inv, targets, 4) then found = inv break end
+                end
+                if not found and not panelDebugged then
+                    panelDebugged = true
+                    log("panel lookup failed for %s: %d inventories, %d inventory components; sample outer chain: %s",
+                        shortName(gate), #all, #comps, (function()
+                            local inv = all[1]; if not inv then return "none" end
+                            local parts, cur = {}, inv
+                            for _ = 1, 4 do
+                                local nxt = nil; pcall(function() nxt = cur:GetOuter() end)
+                                if not (nxt and nxt:IsValid()) then break end
+                                parts[#parts + 1] = shortName(nxt); cur = nxt
+                            end
+                            return table.concat(parts, " > ")
+                        end)())
+                end
             end
         end
     end)
+    if found then panelCache[key] = found end
     return found
 end
 
@@ -322,6 +370,58 @@ local function tell(player, text)
             controller:ClientReceiveServerMessage("[Massgate] " .. text)
         end
     end)
+end
+
+------------------------------------------------------------------------------------------
+-- Look: hide every mesh component on the crate actor, then show our mesh in DeployableSM
+------------------------------------------------------------------------------------------
+
+local meshCache = {}
+local lookDone = {}
+
+local function loadMesh(kind)
+    local path = CONFIG.Meshes[kind]
+    if not path then return nil end
+    if valid(meshCache[kind]) then return meshCache[kind] end
+    local ok, mesh = pcall(StaticFindObject, path)
+    if not ok or not valid(mesh) then
+        ok, mesh = pcall(LoadAsset, (path:gsub("%.[^./]+$", "")))
+    end
+    if ok and valid(mesh) then
+        meshCache[kind] = mesh
+        return mesh
+    end
+    log("could not load %s mesh %s (%s)", kind, path, tostring(mesh))
+    return nil
+end
+
+local function applyLook(actor, kind)
+    local key = fullName(actor)
+    if lookDone[key] then return end
+    local ok, err = pcall(function()
+        local mesh = loadMesh(kind)
+        if not mesh then return end
+        local slot = actor.DeployableSM
+        if not valid(slot) then return log("no DeployableSM on %s", shortName(actor)) end
+        local slotName = fullName(slot)
+        local hidden = 0
+        for _, clsPath in ipairs({ "/Script/Engine.StaticMeshComponent", "/Script/Engine.SkeletalMeshComponent" }) do
+            local comps = actor:K2_GetComponentsByClass(StaticFindObject(clsPath))
+            for i = 1, #comps do
+                local comp = comps[i]
+                if fullName(comp) ~= slotName then
+                    pcall(function() comp:SetVisibility(false, true) end)
+                    hidden = hidden + 1
+                end
+            end
+        end
+        slot:SetStaticMesh(mesh)
+        slot:SetVisibility(true, true)
+        pcall(function() slot:SetHiddenInGame(false, true) end)
+        lookDone[key] = true
+        dbg("%s look on %s: %d other mesh component(s) hidden", kind, shortName(actor), hidden)
+    end)
+    if not ok then log("applyLook failed: %s", tostring(err)) end
 end
 
 ------------------------------------------------------------------------------------------
@@ -701,7 +801,10 @@ local function onButtonInteract(self, Instigator, HitResult)
 end
 
 local function refreshAllIcons()
-    for _, entry in ipairs(allGates()) do updateMapIcon(entry.actor, entry.kind, entry.channel) end
+    for _, entry in ipairs(allGates()) do
+        applyLook(entry.actor, entry.kind)
+        updateMapIcon(entry.actor, entry.kind, entry.channel)
+    end
 end
 
 local function tryHook()
@@ -734,8 +837,9 @@ for _, bpPath in ipairs(CONFIG.GateBlueprints) do
             ExecuteInGameThread(function()
                 local kind, channel = identify(actor)
                 if kind then
-                    log("%s [%s] spawned at %s powered=%s exotics=%d", kind, tostring(channel), fmtLoc(locationOf(actor)),
-                        tostring(isPowered(actor)), (exoticsIn(panelOf(actor))))
+                    log("%s [%s] spawned at %s powered=%s exotics=%d panel=%s", kind, tostring(channel), fmtLoc(locationOf(actor)),
+                        tostring(isPowered(actor)), (exoticsIn(panelOf(actor))), tostring(panelOf(actor) ~= nil))
+                    applyLook(actor, kind)
                     updateMapIcon(actor, kind, channel)
                 end
             end)

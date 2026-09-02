@@ -1169,7 +1169,7 @@
                 {
                     "Name": "Item_Massgate_Crystal_{CH}",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Crystal_{CH}-DisplayName\", \"Tuning Crystal ({CH})\")",
-                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Resources/T_ITEM_Ore_RedExotic_WithIcon.T_ITEM_Ore_RedExotic_WithIcon",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Voxels/T_ITEM_Ore_RedExotic_WithIcon.T_ITEM_Ore_RedExotic_WithIcon",
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Crystal_{CH}-Description\", \"A shard of exotic lattice carrying the {CH} colour charge. Slot it into the tuning slot of a Massgate Anchor or Resonator (the last slot of its panel) and the lattice takes on that colour. Two lattices of the same colour tune to one another; there are three colours and no fourth.\")",
                     "Weight": 500,
                     "MaxStack": 10
