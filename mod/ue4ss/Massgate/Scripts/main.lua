@@ -420,8 +420,28 @@ local function loadMesh(kind)
     return nil
 end
 
--- Component names the crate Blueprint uses for its box (from the class dump).
-local CRATE_MESH_COMPONENTS = { "SM_DEP_Crate_SML_Metal", "SM_DEP_Crate_SML_Metal1" }
+-- Every object whose outer is this actor: its components, found by walking the object table.
+-- K2_GetComponentsByClass gave us entries Lua could not use, so this is the reliable route.
+local function componentsOf(actor)
+    local list, actorName = {}, fullName(actor)
+    pcall(function()
+        ForEachUObject(function(obj)
+            pcall(function()
+                local outer = obj:GetOuter()
+                if outer and outer:IsValid() and fullName(outer) == actorName then
+                    list[#list + 1] = obj
+                end
+            end)
+        end)
+    end)
+    return list
+end
+
+local function className(obj)
+    local ok, name = pcall(function() return obj:GetClass():GetFName():ToString() end)
+    if ok and name then return name end
+    return (fullName(obj):match("^(%S+)") or "?")
+end
 
 local function applyLook(actor, kind)
     local key = fullName(actor)
@@ -432,45 +452,28 @@ local function applyLook(actor, kind)
         local slot = actor.DeployableSM
         if not valid(slot) then return log("no DeployableSM on %s", shortName(actor)) end
         local slotName = fullName(slot)
-        local report = {}
+        local report, hidden = {}, 0
 
-        -- 1. The crate's own box components: destroy them outright.
-        for _, propName in ipairs(CRATE_MESH_COMPONENTS) do
-            pcall(function()
-                local comp = actor[propName]
-                if valid(comp) then
-                    comp:SetVisibility(false, true)
-                    comp:SetHiddenInGame(true, true)
-                    comp:K2_DestroyComponent(actor)
-                    report[#report + 1] = propName .. ":destroyed"
-                end
-            end)
-        end
-
-        -- 2. Everything else that renders a mesh, except our slot: hide.
-        for _, clsPath in ipairs({ "/Script/Engine.StaticMeshComponent", "/Script/Engine.SkeletalMeshComponent" }) do
-            local comps = actor:K2_GetComponentsByClass(StaticFindObject(clsPath))
-            for i = 1, #comps do
-                local comp = comps[i]
-                if fullName(comp) ~= slotName then
-                    local before = nil
-                    pcall(function() before = comp:IsVisible() end)
-                    pcall(function() comp:SetVisibility(false, true) end)
-                    pcall(function() comp:SetHiddenInGame(true, true) end)
-                    if before then report[#report + 1] = shortName(comp) .. ":hidden" end
-                end
+        for _, comp in ipairs(componentsOf(actor)) do
+            local cls = className(comp)
+            if cls:find("MeshComponent", 1, true) and fullName(comp) ~= slotName then
+                local vis = nil
+                pcall(function() vis = comp:IsVisible() end)
+                pcall(function() comp:SetVisibility(false, true) end)
+                pcall(function() comp:SetHiddenInGame(true, true) end)
+                hidden = hidden + 1
+                report[#report + 1] = string.format("%s(%s) was vis=%s", shortName(comp), cls, tostring(vis))
             end
         end
 
-        -- 3. Our mesh into the slot. SetStaticMesh refuses on Static mobility, so make it movable.
         pcall(function() slot:SetMobility(2) end) -- EComponentMobility::Movable
         local set = slot:SetStaticMesh(mesh)
         slot:SetVisibility(true, true)
         pcall(function() slot:SetHiddenInGame(false, true) end)
-        report[#report + 1] = "slot:" .. shortName(slot) .. " set=" .. tostring(set)
 
         if set ~= false then lookDone[key] = true end
-        dbg("%s look on %s: %s", kind, shortName(actor), table.concat(report, ", "))
+        log("%s look on %s: hid %d mesh component(s) [%s]; slot set=%s", kind, shortName(actor), hidden,
+            table.concat(report, "; "), tostring(set))
     end)
     if not ok then log("applyLook failed: %s", tostring(err)) end
 end
@@ -486,14 +489,12 @@ local function dumpComponentsLater(actor)
         ExecuteInGameThread(function()
             pcall(function()
                 if not valid(actor) then return end
-                local comps = actor:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.ActorComponent"))
+                local comps = componentsOf(actor)
                 local parts = {}
-                for i = 1, #comps do
-                    local c = comps[i]
+                for _, c in ipairs(comps) do
                     local vis = "-"
                     pcall(function() vis = tostring(c:IsVisible()) end)
-                    local cls = fullName(c):match("^(%S+)") or "?"
-                    parts[#parts + 1] = string.format("%s:%s vis=%s", cls, shortName(c), vis)
+                    parts[#parts + 1] = string.format("%s:%s vis=%s", className(c), shortName(c), vis)
                 end
                 log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
                 pcall(function()
