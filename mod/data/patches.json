@@ -1254,8 +1254,8 @@
         }
     },
     "channel_icons": {
-        "Red": "/Game/Assets/2DArt/UI/Items/Item_Icons/Voxels/T_ITEM_Ore_RedExotic_WithIcon.T_ITEM_Ore_RedExotic_WithIcon",
-        "Green": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Condensed_Exotic.T_ITEM_Condensed_Exotic",
-        "Blue": "/Game/Assets/2DArt/UI/Items/Item_Icons/Voxels/T_ITEM_Ore_Exotic_WithIcon.T_ITEM_Ore_Exotic_WithIcon"
+        "Red": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Red.T_ITEM_Flare_Red",
+        "Green": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Green.T_ITEM_Flare_Green",
+        "Blue": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Blue.T_ITEM_Flare_Blue"
     }
 }
