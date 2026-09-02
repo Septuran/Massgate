@@ -53,7 +53,8 @@ local CONFIG = {
     InterferenceRadiusCm = 50000,                      -- 500 m
     CooldownSeconds      = 20,
     ChargeSeconds        = 3.5,                        -- transit fires 3.5 s into the 5 s charge sound
-    ChargeFollowsSound   = false,                      -- true: use the Charge event's length instead
+    ChargeFollowsSound   = false,
+    ArrivalSoundDelayMs  = 500,                        -- let the listener arrive before the sound                      -- true: use the Charge event's length instead
     FieldRadiusCm        = 800,
     BringTames           = true,
     FollowingTamesOnly   = true,
@@ -926,8 +927,14 @@ local function performTransit(gate, kind, channel, player, partner)
         end
     end
 
-    -- The charge sound is still playing at the origin; the destination gets its own.
-    playSound("Transit", partner, dest)
+    -- The charge sound is still playing at the origin; the destination gets its own, a moment
+    -- later so the audio listener has caught up with the player (fired instantly it is culled
+    -- as out of range).
+    ExecuteWithDelay(CONFIG.ArrivalSoundDelayMs, function()
+        ExecuteInGameThread(function()
+            pcall(function() if valid(partner) then playSound("Transit", partner, dest) end end)
+        end)
+    end)
 
     local now = os.time()
     lastTransit[fullName(gate)] = now
