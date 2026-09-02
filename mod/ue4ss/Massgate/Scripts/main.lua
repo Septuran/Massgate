@@ -334,28 +334,33 @@ end
 
 -- Stack size lives in the item's dynamic data as (PropertyType = ItemableStack, Value = n).
 -- Never hand the item struct to a native function: that crashed the game.
+-- UE4SS returns the struct's TArray as a plain Lua table (elements are tables or struct userdata),
+-- so accept every shape: Lua table, userdata with ForEach, or wrapped in a RemoteUnrealParam.
 local stackDebugged = false
 local function stackOf(item)
     local count, seen = nil, {}
+    local function consider(entry)
+        entry = unwrap(entry)
+        local ptype, value = nil, nil
+        pcall(function() ptype, value = entry.PropertyType, entry.Value end)
+        local isStack = tonumber(ptype) == CONFIG.StackProperty or tostring(ptype):find("ItemableStack", 1, true) ~= nil
+        seen[#seen + 1] = tostring(ptype) .. "=" .. tostring(value)
+        if isStack and tonumber(value) then count = tonumber(value) end
+    end
     local ok, err = pcall(function()
         local dyn = unwrap(item.ItemDynamicData)
-        if type(dyn) ~= "userdata" or dyn.ForEach == nil then
-            error("ItemDynamicData is " .. type(item.ItemDynamicData) .. " -> " .. type(dyn) .. " (no ForEach)")
+        if type(dyn) == "table" then
+            for _, entry in pairs(dyn) do consider(entry) end
+        elseif type(dyn) == "userdata" and dyn.ForEach ~= nil then
+            dyn:ForEach(function(_, entry) consider(entry) end)
+        else
+            error("ItemDynamicData is " .. type(item.ItemDynamicData) .. " -> " .. type(dyn))
         end
-        dyn:ForEach(function(index, elem)
-            local entry = unwrap(elem)
-            local ptype, value = tonumber(entry.PropertyType), tonumber(entry.Value)
-            seen[#seen + 1] = tostring(entry.PropertyType) .. "=" .. tostring(entry.Value)
-            if ptype == CONFIG.StackProperty then count = value end
-        end)
     end)
-    if not ok and not stackDebugged then
+    if not stackDebugged then
         stackDebugged = true
-        log("stack read failed: %s", tostring(err))
-    end
-    if count == nil and not stackDebugged then
-        stackDebugged = true
-        dbg("stack property not found; dynamic data = [%s]", table.concat(seen, ", "))
+        if not ok then log("stack read failed: %s", tostring(err))
+        else dbg("stack read: count=%s dynamic data = [%s]", tostring(count), table.concat(seen, ", ")) end
     end
     return count or 1
 end
