@@ -103,6 +103,34 @@ def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
     return tables
 
 
+def expand_channels(patches: dict) -> dict:
+    """Clone every row of a per_channel table once per channel, replacing {CH}."""
+    channels = patches.get("channels", [])
+
+    def fill(node, channel):
+        if isinstance(node, str):
+            return node.replace("{CH}", channel)
+        if isinstance(node, dict):
+            return {k: fill(v, channel) for k, v in node.items()}
+        if isinstance(node, list):
+            return [fill(v, channel) for v in node]
+        return node
+
+    expanded = []
+    for patch in patches["tables"]:
+        if not patch.get("per_channel"):
+            expanded.append(patch)
+            continue
+        if not channels:
+            sys.exit(f"!! {patch['table']} is per_channel but no channels are defined")
+        clone = {k: v for k, v in patch.items() if k != "per_channel"}
+        for op in ("add", "replace"):
+            if op in patch:
+                clone[op] = [fill(row, ch) for row in patch[op] for ch in channels]
+        expanded.append(clone)
+    return {**patches, "tables": expanded}
+
+
 def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[tuple[str, dict]]:
     """Add/replace rows. Returns the list of (table_key, row) we introduced."""
     introduced: list[tuple[str, dict]] = []
@@ -127,9 +155,10 @@ def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[t
 
 
 def apply_dev_mode(introduced: list[tuple[str, dict]]) -> None:
-    """Make the gate free: no blueprint, 1 Fiber, craftable from the inventory."""
+    """Make the gates free: no blueprint, 1 Fiber, craftable from the inventory."""
+    count = 0
     for key, row in introduced:
-        if key == RECIPE_TABLE and row["Name"] == RECIPE_ROW:
+        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW):
             row.pop("Requirement", None)
             row["RequiredMillijoules"] = 1000
             row["RecipeSets"] = [
@@ -139,9 +168,10 @@ def apply_dev_mode(introduced: list[tuple[str, dict]]) -> None:
             row["Inputs"] = [
                 {"Element": {"RowName": "Fiber", "DataTableName": "D_ItemsStatic"}, "Count": 1}
             ]
-            print("   DEV: recipe is free, unlocked and craftable from the inventory")
-            return
-    sys.exit("!! dev mode: recipe row not found among introduced rows")
+            count += 1
+    if not count:
+        sys.exit("!! dev mode: no recipe rows found among introduced rows")
+    print(f"   DEV: {count} recipe(s) are free, unlocked and craftable from the inventory")
 
 
 def collect_refs(node, table_stem: str, field_hint: str | None = None):
@@ -196,7 +226,14 @@ def install(pak: Path, dev: bool) -> None:
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
-    shutil.copy2(pak, GAME_MODS / PAK_NAME)
+    try:
+        shutil.copy2(pak, GAME_MODS / PAK_NAME)
+    except PermissionError:
+        sys.exit(
+            "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
+            "   Close the game, then run:  python tools/build.py --merge-installed"
+            + (" --dev" if dev else "") + " --install"
+        )
     print(f"   pak      -> {GAME_MODS / PAK_NAME}")
 
     target = UE4SS_MODS / LUA_MOD.name
@@ -228,7 +265,7 @@ def main() -> int:
     print("1. loading base tables")
     tables = load_base_tables(args.merge_installed)
     print("2. applying patches")
-    introduced = apply_patches(tables, read_json(PATCHES))
+    introduced = apply_patches(tables, expand_channels(read_json(PATCHES)))
     touched = sorted({key for key, _ in introduced})
     if args.dev:
         print("3. DEV MODE")

@@ -60,6 +60,17 @@ data/original/            extracted game tables (gitignored)
 data/installed/           tables from other installed mod paks (gitignored)
 ```
 
+## Configuration
+
+`mod/ue4ss/Massgate/Scripts/config.lua` (rewritten in the game folder by `--install`):
+
+- `DevMode` — see above.
+- `GateMesh` — asset path of the mesh the gate wears instead of the spotlight tripod. Default
+  is the orbital-exchange landing pad. Set to `false` to keep the tripod. Keep it in sync with
+  `PreviewStaticMesh` in `patches.json` so the placement preview matches.
+
+Channels are defined in `patches.json` under `channels`; each becomes its own item and recipe.
+
 ## Testing notes
 
 - Progress and errors are logged to `Icarus\Binaries\Win64\ue4ss\UE4SS.log` with a
