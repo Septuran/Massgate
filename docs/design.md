@@ -33,7 +33,7 @@ it to the colonists: it is a leash, not a road.
 | Resonator cost | 60 Exotics, 15 Electronics, 20 Composites, 40 Copper Wire, 10 Platinum Ingot, 1 Powerbank | Cheap enough to plant several outposts |
 | Anchor power | 2500 units while running | Comparable to a Material Processor; needs the base grid |
 | Resonator power | 500 units while running | A wind turbine or a couple of solar panels at the outpost |
-| Channels | Alpha, Beta, Gamma for now; the list is data-driven | One pair per channel; the Lua reads the channel from the item row |
+| Channels | Alpha, Beta, Gamma for now; the list is data-driven | Set on the placed gate with alt-press "Tune channel"; stored per gate and kept across saves |
 | Pairing | Exactly one Anchor and one Resonator per channel | Two of the same kind on a channel never tune |
 | Anchor placement | Anchors ignore each other for interference | A base can hold one pad per channel in a row |
 | Resonator placement | No other gate of any kind within 500 m, its own anchor included | Stops short hops and gate spam; forces outposts far apart and far from base |
@@ -57,7 +57,8 @@ Two layers, both required:
    `{CH}` replaced, so more channels is one line. The rows reuse the game's Spotlight tripod
    actor as the physical deployable because it is powered, passive and has no side effects.
 2. **UE4SS Lua mod** (`mod/ue4ss/Massgate`). Hooks the generic button-press interaction,
-   parses kind and channel out of the owning actor's item row, applies the rules above, and
+   reads the kind from the owning actor's item row and the channel from its per-gate store
+   (`channels.txt` next to the mod, keyed by the item's database GUID), applies the rules above, and
    moves the player with the engine's teleport after a ground trace at the destination. At
    spawn it swaps the tripod mesh per kind: the orbital-exchange landing pad for anchors, the
    survey laser uplink for resonators. Messages reach the player through the game's chat box.
@@ -66,18 +67,18 @@ Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 
 | Table | Row | Purpose |
 | ----- | --- | ------- |
-| D_ItemsStatic | Massgate_<K>_<CH> | The item; links every trait below |
-| D_ItemTemplate | Massgate_<K>_<CH> | Craft output template |
-| D_Itemable | Item_Massgate_<K>_<CH> | Name, description, flavour text, icon, weight |
+| D_ItemsStatic | Massgate_<K> | The item; links every trait below |
+| D_ItemTemplate | Massgate_<K> | Craft output template |
+| D_Itemable | Item_Massgate_<K> | Name, description, flavour text, icon, weight |
 | D_Deployable | Massgate_<K> | Variants, must be outside |
 | D_DeployableSetup | Massgate_<K> | Which Blueprint actor and preview mesh to spawn |
 | D_Resource, D_Energy | Massgate_<K> | Electric connection and draw (2500 / 500) |
-| D_Interactable | Massgate_Gate | Press = engage, hold = power toggle, alt-hold = pick up (shared) |
-| D_Interactions | Massgate_Activate | "Engage Massgate" prompt on the button-trigger behaviour |
-| D_ProcessorRecipes | Massgate_<K>_<CH> | Fabricator recipes |
+| D_Interactable | Massgate_Gate | Press = engage, hold = power toggle, alt-press = tune channel, alt-hold = pick up (shared) |
+| D_Interactions | Massgate_Activate, Massgate_Tune | "Engage Massgate" (press) and "Tune channel" (alt-press) prompts on the button-trigger behaviour |
+| D_ProcessorRecipes | Massgate_<K> | Two Fabricator recipes |
 | D_Talents | Massgate_Gate | One tech-tree node at (4550, 700) unlocking every recipe |
-| D_MapIcons | Massgate_<K> | Map and compass icon per kind; the Lua attaches the game's map-icon component to each gate |
-| D_ItemsStatic etc. | Massgate_Gate | Legacy v0.1 item kept so old placed gates load; acts as Anchor Alpha |
+| D_MapIcons | Massgate_<K>_<CH> | Map and compass icon per kind and channel; the Lua attaches the game's map-icon component and repoints it on tune |
+| D_ItemsStatic etc. | Massgate_Gate, Massgate_<K>_<CH> | Legacy items from earlier builds kept so placed gates load; no recipes |
 
 ## Multiplayer
 

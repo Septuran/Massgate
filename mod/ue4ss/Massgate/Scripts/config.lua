@@ -5,9 +5,13 @@
 --                    need 10 m of separation. For testing on an early-game character.
 --                    Pair it with a `--dev` pak build so the recipes are free too.
 -- DevMode  = false : the real rules (see docs/design.md).
+-- Channels         : the channel names a gate can be tuned to, in cycling order. Must match
+--                    the "channels" list in mod/data/patches.json (the map icon rows are
+--                    generated from it); build.py writes it for you at install.
 -- Meshes           : optional table { Anchor = path, Resonator = path } overriding the
 --                    meshes the two kinds wear; false keeps the spotlight tripod for that
 --                    kind. Omit to use the defaults.
 return {
     DevMode = false,
+    Channels = { "Alpha", "Beta", "Gamma" },
 }

@@ -221,7 +221,7 @@ def pack(repak: Path) -> Path:
     return out
 
 
-def install(pak: Path, dev: bool) -> None:
+def install(pak: Path, dev: bool, channels: list[str]) -> None:
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
@@ -241,12 +241,16 @@ def install(pak: Path, dev: bool) -> None:
         shutil.rmtree(target)
     shutil.copytree(LUA_MOD, target)
     config = target / "Scripts" / "config.lua"
+    lua_channels = ", ".join(f'"{c}"' for c in channels)
     config.write_text(
         "-- Written by tools/build.py at install time. Edit the repo copy, not this file.\n"
-        f"return {{ DevMode = {'true' if dev else 'false'} }}\n",
+        "return {\n"
+        f"    DevMode = {'true' if dev else 'false'},\n"
+        f"    Channels = {{ {lua_channels} }},\n"
+        "}\n",
         encoding="utf-8",
     )
-    print(f"   lua mod  -> {target}  (DevMode = {'true' if dev else 'false'})")
+    print(f"   lua mod  -> {target}  (DevMode = {'true' if dev else 'false'}, channels = {channels})")
 
 
 def main() -> int:
@@ -265,7 +269,8 @@ def main() -> int:
     print("1. loading base tables")
     tables = load_base_tables(args.merge_installed)
     print("2. applying patches")
-    introduced = apply_patches(tables, expand_channels(read_json(PATCHES)))
+    patches = read_json(PATCHES)
+    introduced = apply_patches(tables, expand_channels(patches))
     touched = sorted({key for key, _ in introduced})
     if args.dev:
         print("3. DEV MODE")
@@ -284,7 +289,7 @@ def main() -> int:
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
     if args.install:
         print("7. installing")
-        install(out, args.dev)
+        install(out, args.dev, patches.get("channels", []))
     return 0
 
 
