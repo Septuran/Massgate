@@ -1267,6 +1267,48 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
         Ar:Log(string.format("[Massgate] sfx %s (%.2f s) at %s -> %s", path, eventLength(ev), fmtLoc(loc), played and "played" or "FAILED (see UE4SS.log)"))
         return true
     end
+    if Parameters[1] == "sfxtour" then
+        -- Play every matching event in turn, spaced by its length, announcing each on screen.
+        -- Silent ones are parameter-gated; note the names you like. Max 80 per run.
+        local needle, ctx = Parameters[2], gates[1] and gates[1].actor or nil
+        if not needle or not ctx then Ar:Log("[Massgate] usage: massgate sfxtour <substring>  (needs a placed gate)") return true end
+        local okList, list = pcall(require, "sfx_events")
+        if not okList then Ar:Log("[Massgate] sfx_events.lua missing") return true end
+        local controller = nil
+        pcall(function()
+            local gs = StaticFindObject("/Script/Engine.Default__GameplayStatics")
+            controller = gs:GetPlayerController(ctx, 0)
+        end)
+        local say = function(text)
+            log("sfxtour %s", text)
+            pcall(function() if valid(controller) then controller:AddLocalMessage("[sfx] " .. text) end end)
+        end
+        local delay, n = 0, 0
+        for _, full in ipairs(list) do
+            if n < 80 and full:lower():find(needle:lower(), 1, true) then
+                n = n + 1
+                local index, path = n, full
+                ExecuteWithDelay(math.floor(delay), function()
+                    ExecuteInGameThread(function()
+                        local ev = loadEvent(path)
+                        local len = ev and eventLength(ev) or -1
+                        local loc = locationOf(ctx)
+                        pcall(function()
+                            local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+                            local l = lib:GetListenerLocation(ctx)
+                            if l and l.X then loc = { X = l.X, Y = l.Y, Z = l.Z } end
+                        end)
+                        soundFailed[path] = nil
+                        playEventAt(path, ctx, loc)
+                        say(string.format("%d/%d  %s  (%.1f s)", index, n, path:match("/SFX/(.*)%.[^.]*$") or path, len))
+                    end)
+                end)
+                delay = delay + 4000 -- one every 4 s; long events are cut off by the next, which is fine
+            end
+        end
+        Ar:Log(string.format("[Massgate] sfxtour '%s': %d event(s), one every 4 s, names on screen and in UE4SS.log", needle, n))
+        return true
+    end
     if Parameters[1] == "sfxscan" then
         -- Load every event whose path contains the substring and print its length, so a sample
         -- decoded from the banks can be matched to its event by duration. Diagnostic only.
