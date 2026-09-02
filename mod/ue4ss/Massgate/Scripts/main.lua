@@ -79,11 +79,13 @@ local CONFIG = {
         Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
         Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
     },
-    -- Sounds: FMOD events shipped with the game (object paths). Chosen by ear from decoded samples.
+    -- Sounds: FMOD events shipped with the game (object paths). Many events are silent when fired
+    -- as plain one-shots (they wait for a game parameter); these were auditioned in game with
+    -- `massgate sfx <name>` and are known to play.
     SoundsEnabled        = true,
     Sounds = {
-        Charge  = "/Game/FMOD/Events/SFX/Deployable/Trail_Beacon/SFX_DEP_TRAIL_BEACON_BEEP.SFX_DEP_TRAIL_BEACON_BEEP", -- 4.55 s, carries the "beacon link" sample
-        Transit = "/Game/FMOD/Events/SFX/Deployable/Laser/SFX_LASER_START.SFX_LASER_START",
+        Charge  = "/Game/FMOD/Events/SFX/Deployable/Kit_Radar/SFX_DEP_KITRADAR_STOP.SFX_DEP_KITRADAR_STOP",              -- 3.2 s
+        Transit = "/Game/FMOD/Events/SFX/Deployable/TeslaCoil/SFX_DEP_TESLACOIL_ELECTRIFY_ZAP.SFX_DEP_TESLACOIL_ELECTRIFY_ZAP", -- 2 s
         Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
     MapIcons             = true,
