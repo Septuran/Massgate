@@ -1,0 +1,22 @@
+# Extracted game data (copyrighted, regenerate with tools/extract_data.py)
+data/original/
+data/extracted/
+
+# Local tools and dumps (large, machine specific)
+tools/bin/
+dumps/
+
+# Build output
+build/
+*.pak
+!mod/**/*.pak.keep
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+
+# JSON tables pulled from installed mod paks (merge base, regenerate)
+data/installed/

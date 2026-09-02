@@ -1,0 +1,206 @@
+"""Build the Massgate data-table pak.
+
+Usage:
+    python tools/build.py                 # base = pristine game tables (data/original)
+    python tools/build.py --merge-installed
+                                          # base = tables as replaced by the other mod paks
+                                          #   currently installed (data/installed/*), layered in
+                                          #   alphabetical pak order, so our pak does not undo them
+    python tools/build.py --install       # also copy the pak into the game's Paks/mods folder
+    python tools/build.py --repak PATH    # explicit path to repak.exe (else tools/bin/repak.exe)
+
+Steps:
+  1. load base tables (original, optionally overlaid with installed mod versions)
+  2. apply mod/data/patches.json  (rows to add / replace, per table)
+  3. validate every row reference we introduce points at an existing row
+  4. write the full tables to build/pak/Icarus/Content/Data/...
+  5. pack build/pak into build/Massgate_P.pak with repak (V11, zlib)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+ORIGINAL = REPO / "data" / "original"
+INSTALLED = REPO / "data" / "installed"
+PATCHES = REPO / "mod" / "data" / "patches.json"
+BUILD = REPO / "build"
+PAK_ROOT = BUILD / "pak"
+PAK_NAME = "Massgate_P.pak"
+GAME_MODS = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus\Content\Paks\mods")
+
+# A bare {"RowName": ...} under field X normally points at table D_X (the ItemsStatic
+# trait convention). These fields break that convention.
+TRAIT_TABLE_OVERRIDES = {
+    "Audio": "D_ItemAudioData",
+    "D_ProcessorRecipes.Audio": "D_CraftingAudioData",
+    "Requirement": "D_Talents",
+    "TalentTree": "D_TalentTrees",
+    "EnergyFlow": "D_Energy",
+    "ItemStaticData": "D_ItemsStatic",
+}
+
+
+def hinted_table(table_stem: str, field: str) -> str:
+    return (
+        TRAIT_TABLE_OVERRIDES.get(f"{table_stem}.{field}")
+        or TRAIT_TABLE_OVERRIDES.get(field)
+        or f"D_{field}"
+    )
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def write_json(path: Path, data: dict) -> None:
+    # Match the game's own formatting: 4-space indent, CRLF, unicode kept.
+    text = json.dumps(data, indent=4, ensure_ascii=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.replace("\n", "\r\n") + "\r\n", encoding="utf-8")
+
+
+def find_table(base_dir: Path, table_name: str) -> Path | None:
+    hits = list(base_dir.rglob(f"{table_name}.json"))
+    return hits[0] if hits else None
+
+
+def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
+    """Return {rel_path: (rel_path, table_json)} for every original table."""
+    tables: dict[str, tuple[Path, dict]] = {}
+    for path in sorted(ORIGINAL.rglob("*.json")):
+        rel = path.relative_to(ORIGINAL)
+        tables[str(rel).replace("\\", "/")] = (rel, read_json(path))
+    if not merge_installed:
+        return tables
+    if not INSTALLED.exists():
+        print("!! --merge-installed given but data/installed is missing; using originals only")
+        return tables
+    for pak_dir in sorted(INSTALLED.iterdir()):  # alphabetical = game load order
+        for path in pak_dir.rglob("*.json"):
+            parts = [p.lower() for p in path.relative_to(pak_dir).parts]
+            if "data" not in parts:
+                continue
+            rel = Path(*path.relative_to(pak_dir).parts[parts.index("data") + 1 :])
+            key = str(rel).replace("\\", "/")
+            if key in tables:
+                tables[key] = (rel, read_json(path))
+                print(f"   overlay {key:45s} <- {pak_dir.name}")
+    return tables
+
+
+def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[tuple[str, dict]]:
+    """Add/replace rows. Returns the list of (table_key, row) we introduced."""
+    introduced: list[tuple[str, dict]] = []
+    for patch in patches["tables"]:
+        key = patch["table"]
+        if key not in tables:
+            sys.exit(f"!! patch targets unknown table {key}")
+        _, table = tables[key]
+        rows = table["Rows"]
+        index = {r["Name"]: i for i, r in enumerate(rows)}
+        for row in patch.get("add", []):
+            if row["Name"] in index:
+                sys.exit(f"!! {key}: row {row['Name']} already exists (use 'replace')")
+            rows.append(row)
+            introduced.append((key, row))
+        for row in patch.get("replace", []):
+            if row["Name"] not in index:
+                sys.exit(f"!! {key}: row {row['Name']} to replace does not exist")
+            rows[index[row["Name"]]] = row
+            introduced.append((key, row))
+    return introduced
+
+
+def collect_refs(node, table_stem: str, field_hint: str | None = None):
+    """Yield (table_name, row_name) for every row handle in a row."""
+    if isinstance(node, dict):
+        if "RowName" in node and isinstance(node["RowName"], str):
+            table = node.get("DataTableName")
+            if table is None and field_hint:
+                table = hinted_table(table_stem, field_hint)
+            if table:
+                yield table, node["RowName"]
+        for k, v in node.items():
+            yield from collect_refs(v, table_stem, k)
+    elif isinstance(node, list):
+        for v in node:
+            yield from collect_refs(v, table_stem, field_hint)
+
+
+def validate(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, dict]]) -> None:
+    by_name: dict[str, set[str]] = {}
+    for key, (_, table) in tables.items():
+        rows = table.get("Rows")
+        if isinstance(rows, list):  # DataTableMetadata.json and friends have no rows
+            by_name[Path(key).stem] = {r["Name"] for r in rows}
+    problems = 0
+    for key, row in introduced:
+        for table, row_name in collect_refs(row, Path(key).stem):
+            if row_name in ("", "None"):
+                continue
+            if table not in by_name:
+                print(f"   ?  {key}:{row['Name']} -> {table}.{row_name}  (table not in data.pak, cannot check)")
+                continue
+            if row_name not in by_name[table]:
+                print(f"!! {key}:{row['Name']} -> {table}.{row_name}  MISSING")
+                problems += 1
+    if problems:
+        sys.exit(f"!! {problems} broken reference(s); aborting")
+    print(f"   validated {len(introduced)} rows, all references resolve")
+
+
+def pack(repak: Path) -> Path:
+    out = BUILD / PAK_NAME
+    if out.exists():
+        out.unlink()
+    cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(PAK_ROOT), str(out)]
+    subprocess.run(cmd, check=True)
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--merge-installed", action="store_true")
+    ap.add_argument("--install", action="store_true")
+    ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
+    args = ap.parse_args()
+
+    if not ORIGINAL.exists():
+        sys.exit("!! data/original missing: unpack data.pak first (see README)")
+    if not args.repak.exists():
+        sys.exit(f"!! repak not found at {args.repak}")
+
+    print("1. loading base tables")
+    tables = load_base_tables(args.merge_installed)
+    print("2. applying patches")
+    patches = read_json(PATCHES)
+    introduced = apply_patches(tables, patches)
+    touched = sorted({key for key, _ in introduced})
+    print("3. validating references")
+    validate(tables, introduced)
+    print("4. writing tables")
+    if PAK_ROOT.exists():
+        shutil.rmtree(PAK_ROOT)
+    for key in touched:
+        rel, table = tables[key]
+        write_json(PAK_ROOT / "Icarus" / "Content" / "Data" / rel, table)
+        print(f"   {key}")
+    print("5. packing")
+    out = pack(args.repak)
+    print(f"   -> {out} ({out.stat().st_size:,} bytes)")
+    if args.install:
+        if not GAME_MODS.exists():
+            sys.exit(f"!! game mods folder not found: {GAME_MODS}")
+        shutil.copy2(out, GAME_MODS / PAK_NAME)
+        print(f"   installed -> {GAME_MODS / PAK_NAME}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
