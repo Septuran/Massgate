@@ -44,8 +44,18 @@ local CONFIG = {
     TuneRow              = "Massgate_Tune",      -- D_Interactions row behind "Tune colour charge"
     Channels             = { "Red", "Green", "Blue" }, -- the three colour charges; overridden from config.lua
     ExoticsRow           = "MetaResource",       -- the Exotics item
-    BufferSlots          = 4,                    -- StartingSlots of D_InventoryInfo Massgate_Buffer
+    BufferSlots          = 4,                    -- slots 0-3 of the panel hold Exotics
+    ModuleSlot           = 4,                    -- slot 4 of the panel holds one module
+    CouplerRow           = "Massgate_Coupler",   -- Phase Coupler module item row
+    CouplerExtraExotics  = 3,                    -- added to the outbound cost when coupled
     StackProperty        = 7,                    -- EDynamicItemProperties::ItemableStack
+    -- Radial wheel (alt-press): the game's radial behaviour, pointed at our D_RadialMenuData row.
+    RadialBehaviour      = "/Game/BP/Behaviours/Interactable/BP_Interactable_RadialMenu_Deployable.BP_Interactable_RadialMenu_Deployable_C",
+    RadialRow            = "Massgate",
+    RadialOptionPrefix   = "Massgate_",          -- Massgate_<Colour> options are ours
+    RadialLibrary        = "/Script/Icarus.Default__RadialMenuDataLibrary",
+    RadialTable          = "/Engine/Transient.D_RadialMenuData",
+    DevAnchorsPowered    = false,                -- dev mode: anchors count as powered
     ChannelStore         = "Mods/Massgate/channels.txt", -- relative to the ue4ss folder (UE4SS cwd)
     RequirePower         = true,
     InterferenceRadiusCm = 50000,   -- 500 m
@@ -93,12 +103,13 @@ end
 local okCfg, userConfig = pcall(require, "config")
 local DEV_MODE = okCfg and type(userConfig) == "table" and userConfig.DevMode == true
 if DEV_MODE then
-    CONFIG.RequirePower         = false
-    CONFIG.ExoticsOutbound      = 0
-    CONFIG.ExoticsInbound       = 0
+    -- Anchors count as powered so a gridless base can test; resonators still need real power
+    -- or a Phase Coupler, so the upgrade is testable. Trip costs stay real: the dev pak adds a
+    -- fiber-to-Exotics recipe so the buffer can be loaded early.
+    CONFIG.DevAnchorsPowered    = true
     CONFIG.CooldownSeconds      = 0
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m
-    log("DEV MODE: no power, no exotics, no cooldown, 10 m interference radius")
+    log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference")
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end
@@ -332,6 +343,21 @@ local function exoticsIn(inv)
     return total, slots
 end
 
+local function moduleIn(gate)
+    local row = nil
+    pcall(function()
+        local inv = bufferOf(gate)
+        if inv and inv:HasValidItemInSlot(CONFIG.ModuleSlot) then
+            row = inv:GetItem(CONFIG.ModuleSlot).ItemStaticData.RowName:ToString()
+        end
+    end)
+    return row
+end
+
+local function hasCoupler(anchor)
+    return moduleIn(anchor) == CONFIG.CouplerRow
+end
+
 local function consumeExotics(inv, amount)
     local _, slots = exoticsIn(inv)
     local left = amount
@@ -510,15 +536,21 @@ end
 -- Tuning: cycle the gate's channel
 ------------------------------------------------------------------------------------------
 
-local function tune(gate, player)
+local function setChannel(gate, player, newChannel)
     local kind, channel = identify(gate)
-    local idx = channelIndex(channel) or 0
-    local nextChannel = CONFIG.Channels[(idx % #CONFIG.Channels) + 1]
-    loadStore()[gateKey(gate)] = nextChannel
+    if not channelIndex(newChannel) then return end
+    loadStore()[gateKey(gate)] = newChannel
     saveStore()
-    refreshMapIcon(gate, kind, nextChannel)
-    log("tuned %s %s: %s -> %s", kind, gateKey(gate), tostring(channel), nextChannel)
-    tell(player, string.format("%s tuned to channel %s.", kind, nextChannel))
+    refreshMapIcon(gate, kind, newChannel)
+    log("tuned %s %s: %s -> %s", kind, gateKey(gate), tostring(channel), newChannel)
+    tell(player, string.format("%s tuned to %s.", kind, newChannel))
+end
+
+-- Legacy cycling tune (no longer on the prompts; the wheel replaced it).
+local function tune(gate, player)
+    local _, channel = identify(gate)
+    local idx = channelIndex(channel) or 0
+    setChannel(gate, player, CONFIG.Channels[(idx % #CONFIG.Channels) + 1])
 end
 
 ------------------------------------------------------------------------------------------
@@ -646,16 +678,46 @@ local function resolvePartner(gate, kind, channel, gates)
     return partners[1], nil
 end
 
-local function tripCost(kind)
-    return (kind == "Anchor") and CONFIG.ExoticsOutbound or CONFIG.ExoticsInbound
+-- Outbound trips cost Exotics; a coupled pair costs extra because the anchor also pushes power.
+local function tripCost(kind, anchor)
+    if kind ~= "Anchor" then return CONFIG.ExoticsInbound end
+    local cost = CONFIG.ExoticsOutbound
+    if anchor and hasCoupler(anchor) then cost = cost + CONFIG.CouplerExtraExotics end
+    return cost
+end
+
+-- Power state of one end of a pair. Returns powered, source ("grid" | "coupled" | "dev").
+local function powerState(gate, kind, otherGate)
+    if kind == "Anchor" then
+        if CONFIG.DevAnchorsPowered then return true, "dev" end
+        return isPowered(gate), "grid"
+    end
+    if isPowered(gate) then return true, "grid" end
+    -- A resonator with no grid may be fed by its anchor through a Phase Coupler.
+    if otherGate and hasCoupler(otherGate) then
+        local anchorOk = CONFIG.DevAnchorsPowered or isPowered(otherGate)
+        if anchorOk then return true, "coupled" end
+    end
+    return false, "none"
 end
 
 local function checkReady(gate, kind, partner)
+    local anchor = (kind == "Anchor") and gate or partner
     if CONFIG.RequirePower then
-        if not isPowered(gate) then return "This lattice is unpowered." end
-        if not isPowered(partner) then return "The destination lattice is unpowered." end
+        local hereOk = powerState(gate, kind, partner)
+        if not hereOk then
+            return kind == "Resonator"
+                and "This Resonator is unpowered. Give it power, or slot a Phase Coupler into its Anchor."
+                or "This lattice is unpowered."
+        end
+        local thereOk = powerState(partner, otherKind(kind), gate)
+        if not thereOk then
+            return kind == "Anchor"
+                and "The destination Resonator is unpowered. Give it power, or slot a Phase Coupler here."
+                or "The destination Anchor is unpowered."
+        end
     end
-    local cost = tripCost(kind)
+    local cost = tripCost(kind, anchor)
     if cost > 0 then
         local have = exoticsIn(bufferOf(gate))
         if have < cost then
@@ -670,9 +732,10 @@ local function performTransit(gate, kind, channel, player, partner)
     local dest = groundedDestination(partner, player)
     local rotation = player:K2_GetActorRotation()
     local tames = tamesInField(gate, player)
-    local exotics = tripCost(kind)
+    local anchor = (kind == "Anchor") and gate or partner
+    local exotics = tripCost(kind, anchor)
     if exotics > 0 then
-        local taken = consumeExotics(bufferOf(gate), exotics)
+        local taken = consumeExotics(bufferOf(anchor), exotics)
         if taken < exotics then
             return tell(player, string.format("Transit aborted: the lattice could only spare %d of %d Exotics.", taken, exotics))
         end
@@ -709,6 +772,11 @@ local function performTransit(gate, kind, channel, player, partner)
 
     local parts = { kind == "Anchor" and "Outbound transit complete." or "Inbound transit complete." }
     if exotics > 0 then parts[#parts + 1] = string.format("%d Exotics consumed.", exotics) end
+    do
+        local resonator = (kind == "Anchor") and partner or gate
+        local _, source = powerState(resonator, "Resonator", anchor)
+        if source == "coupled" then parts[#parts + 1] = "Resonator powered by phase coupling." end
+    end
     if #tames == 1 then parts[#parts + 1] = "Your tame came with you." end
     if #tames > 1 then parts[#parts + 1] = string.format("%d tames came with you.", #tames) end
     tell(player, table.concat(parts, " "))
@@ -807,22 +875,107 @@ local function onButtonInteract(self, Instigator, HitResult)
     if not ok then log("interact handler error: %s", tostring(err)) end
 end
 
-local function tryHook()
-    if hooked then return true end
-    local ok, err = pcall(RegisterHook, CONFIG.ButtonInteractHook, onButtonInteract)
-    if ok then
-        hooked = true
-        log("hooked %s", CONFIG.ButtonInteractHook)
-        for _, entry in ipairs(allGates()) do decorate(entry.actor, entry.kind, entry.channel) end
-    else
-        dbg("hook not available yet (%s)", tostring(err))
+------------------------------------------------------------------------------------------
+-- Radial wheel: point the game's radial behaviour at our menu row when it starts on a gate,
+-- and act on our colour options when the player picks one.
+------------------------------------------------------------------------------------------
+
+local function gateOfBehaviour(behaviour)
+    local owner = nil
+    pcall(function()
+        local component = behaviour:GetInteractableComponent()
+        if valid(component) then owner = component:GetOwner() end
+    end)
+    if isGate(owner) then return owner end
+    return nil
+end
+
+local function pointRadialAtOurMenu(behaviour)
+    local viaLibrary = pcall(function()
+        local lib = StaticFindObject(CONFIG.RadialLibrary)
+        behaviour.RadialOptions = lib:MakeRadialMenuData(FName(CONFIG.RadialRow))
+    end)
+    if not viaLibrary then
+        behaviour.RadialOptions.RowName = FName(CONFIG.RadialRow)
+        local table = StaticFindObject(CONFIG.RadialTable)
+        if valid(table) then behaviour.RadialOptions.DataTable = table end
     end
-    return hooked
+    return viaLibrary
+end
+
+local function onRadialBeginPlay(self)
+    pcall(function()
+        local behaviour = self:get()
+        if not valid(behaviour) then return end
+        local gate = gateOfBehaviour(behaviour)
+        if not gate then return end
+        local via = pointRadialAtOurMenu(behaviour)
+        dbg("radial menu on %s pointed at %s (via %s)", fullName(gate):match("[^%.]+$"), CONFIG.RadialRow, via and "library" or "fields")
+    end)
+end
+
+local function onRadialInteract(self, Instigator, HitResult)
+    -- Belt and braces: make sure the row is ours right before the wheel opens next time.
+    pcall(function()
+        local behaviour = self:get()
+        if valid(behaviour) and gateOfBehaviour(behaviour) then pointRadialAtOurMenu(behaviour) end
+    end)
+end
+
+local function onRadialItemSelected(self, ItemActionId, ItemPayload)
+    local ok, err = pcall(function()
+        local behaviour = self:get()
+        if not valid(behaviour) then return end
+        local gate = gateOfBehaviour(behaviour)
+        if not gate or not hasAuthority(gate) then return end
+        local id = ItemActionId:get():ToString()
+        if id:sub(1, #CONFIG.RadialOptionPrefix) ~= CONFIG.RadialOptionPrefix then
+            return dbg("radial option %s left to the game", id)
+        end
+        local colour = id:sub(#CONFIG.RadialOptionPrefix + 1)
+        local player = nil
+        pcall(function() player = behaviour.Current_Player end)
+        if not valid(player) then pcall(function() player = behaviour.LastInstigator end) end
+        setChannel(gate, player, colour)
+    end)
+    if not ok then log("radial selection error: %s", tostring(err)) end
+end
+
+------------------------------------------------------------------------------------------
+-- Hook installation. Blueprint functions can only be hooked once their class is loaded, so
+-- each hook is retried until it sticks.
+------------------------------------------------------------------------------------------
+
+local pendingHooks = {
+    { path = CONFIG.ButtonInteractHook, fn = onButtonInteract, essential = true },
+    { path = CONFIG.RadialBehaviour .. ":ReceiveBeginPlay", fn = onRadialBeginPlay },
+    { path = CONFIG.RadialBehaviour .. ":Interact", fn = onRadialInteract },
+    { path = CONFIG.RadialBehaviour .. ":MenuItemSelected", fn = onRadialItemSelected },
+}
+
+local function tryHook()
+    local remaining = {}
+    for _, h in ipairs(pendingHooks) do
+        local ok, err = pcall(RegisterHook, h.path, h.fn)
+        if ok then
+            log("hooked %s", h.path)
+            if h.essential and not hooked then
+                hooked = true
+                for _, entry in ipairs(allGates()) do decorate(entry.actor, entry.kind, entry.channel) end
+            end
+        else
+            dbg("hook not available yet: %s (%s)", h.path, tostring(err))
+            remaining[#remaining + 1] = h
+        end
+    end
+    pendingHooks = remaining
+    return #pendingHooks == 0
 end
 
 LoopAsync(5000, function()
-    ExecuteInGameThread(tryHook)
-    return hooked
+    local done = false
+    ExecuteInGameThread(function() done = tryHook() end)
+    return done
 end)
 
 for _, bpPath in ipairs(CONFIG.GateBlueprints) do

@@ -164,6 +164,52 @@
                     "Inventory": {
                         "RowName": "Massgate_Buffer"
                     }
+                },
+                {
+                    "Name": "Massgate_Coupler",
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Coupler"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Manual_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade2"
+                            }
+                        ]
+                    },
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade2"
+                            },
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
                 }
             ]
         },
@@ -180,6 +226,12 @@
                     "Name": "Massgate_Resonator",
                     "ItemStaticData": {
                         "RowName": "Massgate_Resonator"
+                    }
+                },
+                {
+                    "Name": "Massgate_Coupler",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Coupler"
                     }
                 }
             ]
@@ -203,6 +255,15 @@
                     "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
                     "Weight": 15000,
+                    "MaxStack": 1
+                },
+                {
+                    "Name": "Item_Massgate_Coupler",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-DisplayName\", \"Massgate Phase Coupler\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Portable_Beacon.ITEM_Portable_Beacon",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (the fifth slot of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own. Pushing power as well as a prospector costs extra Exotics per outbound transit.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-FlavorText\", \"Strike the bell hard enough and the fork sings on its own.\")",
+                    "Weight": 5000,
                     "MaxStack": 1
                 }
             ]
@@ -662,7 +723,7 @@
                     "WorldAltPressInteracts": [
                         {
                             "InteractionRow": {
-                                "RowName": "Massgate_Tune",
+                                "RowName": "Massgate_Radial",
                                 "DataTableName": "D_Interactions"
                             },
                             "Tag": ""
@@ -690,10 +751,9 @@
                     "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Activate-InteractionText\", \"Engage Massgate\")"
                 },
                 {
-                    "Name": "Massgate_Tune",
-                    "Behaviour": "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C",
-                    "InteractCooldown": 0.5,
-                    "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Tune-InteractionText\", \"Tune colour charge\")"
+                    "Name": "Massgate_Radial",
+                    "Behaviour": "/Game/BP/Behaviours/Interactable/BP_Interactable_RadialMenu_Deployable.BP_Interactable_RadialMenu_Deployable_C",
+                    "InteractionText": "NSLOCTEXT(\"D_Interactions\", \"Massgate_Radial-InteractionText\", \"Lattice controls\")"
                 }
             ]
         },
@@ -841,6 +901,70 @@
                     "Audio": {
                         "RowName": "MachiningBench"
                     }
+                },
+                {
+                    "Name": "Massgate_Coupler",
+                    "Requirement": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "RequiredMillijoules": 150000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "MetaResource",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 100
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Electronics",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 30
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 80
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Platinum_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 20
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Powerbank",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 2
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Massgate_Coupler",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
                 }
             ]
         },
@@ -890,7 +1014,7 @@
         },
         {
             "table": "Inventory/D_InventoryInfo.json",
-            "_comment": "The lattice's Exotics buffer: four slots that only accept Exotics (Any_Meta tag query, as the dropship's exotics bay).",
+            "_comment": "The lattice's buffer: slots 0-3 accept only Exotics (Any_Meta), slot 4 is the module slot (reuses the T4 communicator-upgrade tag query; our modules carry that tag).",
             "add": [
                 {
                     "Name": "Massgate_Buffer",
@@ -900,7 +1024,81 @@
                     "SlotTemplate": {
                         "RowName": "Any_Meta"
                     },
-                    "StartingSlots": 4
+                    "StartingSlots": 5,
+                    "SlotOverrides": [
+                        {
+                            "Query": {
+                                "RowName": "Mission_Communicator_Upgrade_2",
+                                "DataTableName": "D_TagQueries"
+                            },
+                            "Location": 4
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "table": "Interactions/D_RadialOptions.json",
+            "add": [
+                {
+                    "Name": "Massgate_Red"
+                },
+                {
+                    "Name": "Massgate_Green"
+                },
+                {
+                    "Name": "Massgate_Blue"
+                }
+            ]
+        },
+        {
+            "table": "Interactions/D_RadialMenuData.json",
+            "_comment": "The lattice control wheel (alt-press). ToggleOn and Pickup_Deployable are handled by the game's radial behaviour; the colour options are handled by the Lua.",
+            "add": [
+                {
+                    "Name": "Massgate",
+                    "RadialOptions": [
+                        {
+                            "RadialOption": {
+                                "RowName": "Massgate_Red",
+                                "DataTableName": "D_RadialOptions"
+                            },
+                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-0-DisplayText\", \"Tune Red\")",
+                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
+                        },
+                        {
+                            "RadialOption": {
+                                "RowName": "Massgate_Green",
+                                "DataTableName": "D_RadialOptions"
+                            },
+                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-1-DisplayText\", \"Tune Green\")",
+                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
+                        },
+                        {
+                            "RadialOption": {
+                                "RowName": "Massgate_Blue",
+                                "DataTableName": "D_RadialOptions"
+                            },
+                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-2-DisplayText\", \"Tune Blue\")",
+                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint"
+                        },
+                        {
+                            "RadialOption": {
+                                "RowName": "ToggleOn",
+                                "DataTableName": "D_RadialOptions"
+                            },
+                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-3-DisplayText\", \"Power On/Off\")",
+                            "Image": "/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Home.Icon_Map_Home"
+                        },
+                        {
+                            "RadialOption": {
+                                "RowName": "Pickup_Deployable",
+                                "DataTableName": "D_RadialOptions"
+                            },
+                            "DisplayText": "NSLOCTEXT(\"D_RadialMenuData\", \"Massgate-RadialOptions-4-DisplayText\", \"Pick Up\")",
+                            "Image": "/Engine/EditorResources/S_Pickup.S_Pickup"
+                        }
+                    ]
                 }
             ]
         }

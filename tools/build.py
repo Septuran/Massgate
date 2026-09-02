@@ -179,11 +179,29 @@ def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[t
     return introduced
 
 
-def apply_dev_mode(introduced: list[tuple[str, dict]]) -> None:
-    """Make the gates free: no blueprint, 1 Fiber, craftable from the inventory."""
+DEV_EXOTICS_RECIPE = {
+    "Name": "Massgate_Dev_Exotics",
+    "RequiredMillijoules": 1000,
+    "RecipeSets": [{"RowName": "Character", "DataTableName": "D_RecipeSets"}],
+    "Inputs": [{"Element": {"RowName": "Fiber", "DataTableName": "D_ItemsStatic"}, "Count": 1}],
+    "Outputs": [
+        {"Element": {"RowName": "ExoticsReward_200", "DataTableName": "D_ItemTemplate"}, "Count": 1,
+         "DynamicProperties": [], "Alterations": []}
+    ],
+    "Audio": {"RowName": "MachiningBench"},
+}
+
+
+def apply_dev_mode(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, dict]]) -> None:
+    """Make the gates free: no blueprint, 1 Fiber, craftable from the inventory.
+    Also adds a dev-only recipe turning 1 Fiber into 200 Exotics so buffers and trip
+    costs can be tested on an early-game character."""
+    _, recipes = tables[RECIPE_TABLE]
+    recipes["Rows"].append(DEV_EXOTICS_RECIPE)
+    introduced.append((RECIPE_TABLE, DEV_EXOTICS_RECIPE))
     count = 0
     for key, row in introduced:
-        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW):
+        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW) and row["Name"] != DEV_EXOTICS_RECIPE["Name"]:
             row.pop("Requirement", None)
             row["RequiredMillijoules"] = 1000
             row["RecipeSets"] = [
@@ -303,7 +321,7 @@ def main() -> int:
     touched = sorted({key for key, _ in introduced})
     if args.dev:
         print("3. DEV MODE")
-        apply_dev_mode(introduced)
+        apply_dev_mode(tables, introduced)
     print("4. validating references")
     validate(tables, introduced)
     print("5. writing tables")

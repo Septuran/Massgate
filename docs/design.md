@@ -40,20 +40,23 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Resonator cost | 60 Exotics, 15 Electronics, 20 Composites, 40 Copper Wire, 10 Platinum Ingot, 1 Powerbank | Cheap enough to plant several outposts |
 | Anchor power | 2500 units while running | Comparable to a Material Processor; needs the base grid |
 | Resonator power | 500 units while running | A wind turbine or a couple of solar panels at the outpost |
-| Channels | Exactly three colour charges: Red, Green, Blue | QCD allows no fourth colour; set on the placed gate with alt-press "Tune colour charge", stored per gate across saves |
+| Channels | Exactly three colour charges: Red, Green, Blue | QCD allows no fourth colour; picked on the placed gate from the alt-press wheel, stored per gate across saves |
 | Pairing | Exactly one Anchor and one Resonator per channel | Two of the same kind on a channel never tune |
 | Anchor placement | Anchors ignore each other for interference | A base can hold one pad per channel in a row |
 | Resonator placement | No other gate of any kind within 500 m, its own anchor included | Stops short hops and gate spam; forces outposts far apart and far from base |
 | Charge-up | 3 s after engaging; you must stay within 8 m of the gate | Gives the transit weight and a window to abort |
 | Outbound trip | 5 Exotics drawn from the anchor's own buffer | Pushing out is the expensive choice; the lattice is loaded like a furnace |
-| Exotics buffer | Hold interact opens a 4-slot panel that accepts only Exotics | The game's storage panel; later also the home of upgrade modules |
+| Exotics buffer | Hold interact opens the panel: four Exotics-only slots plus one module slot | The game's storage panel doubles as the lattice's fuel and upgrade bay |
+| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; outbound trips cost 3 extra Exotics because the anchor pushes power too |
+| Wheel | Alt-press opens the game's radial menu: Tune Red / Green / Blue, Power On/Off, Pick Up | One pick instead of cycling a button |
 | Inbound trip | Free, resonator to anchor | The anchor pulls you home |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
 | Tames | Your mounts and pets set to Follow within 8 m travel with you | F dismounts, so you engage on foot; only followers travel, so a farm stays put |
 | Placement | Must be outside | Fits the interference lore and keeps gates visible |
 
-Dev mode (see README) removes power, exotics and cooldown, shrinks interference to 10 m and
-makes the recipes free. It exists only for testing on an early-game character.
+Dev mode (see README) treats anchors as powered, drops the cooldown, shrinks interference to
+10 m, makes the recipes free and adds a fiber-to-Exotics recipe. Resonators still need power or a
+coupler, and trips still cost Exotics, so the buffer and the coupler are testable early.
 
 ## How it is built
 
@@ -82,9 +85,11 @@ Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 | D_Deployable | Massgate_<K> | Variants, must be outside |
 | D_DeployableSetup | Massgate_<K> | Which Blueprint actor and preview mesh to spawn |
 | D_Resource, D_Energy | Massgate_<K> | Electric connection and draw (2500 / 500) |
-| D_Interactable | Massgate_Gate | Press = engage, hold = open the buffer panel, alt-press = tune colour, alt-hold = pick up (shared) |
-| D_Inventory, D_InventoryInfo | Massgate_Buffer | Four slots restricted to Exotics via the game's Any_Meta tag query |
-| D_Interactions | Massgate_Activate, Massgate_Tune | "Engage Massgate" (press) and "Tune channel" (alt-press) prompts on the button-trigger behaviour |
+| D_Interactable | Massgate_Gate | Press = engage, hold = open the panel, alt-press = wheel, alt-hold = pick up (shared) |
+| D_Inventory, D_InventoryInfo | Massgate_Buffer | Slots 0-3 Exotics-only (Any_Meta), slot 4 module-only (reuses the T4 communicator-upgrade tag query) |
+| D_RadialMenuData, D_RadialOptions | Massgate, Massgate_<CH> | The wheel and its colour options |
+| D_ItemsStatic etc. | Massgate_Coupler | The Phase Coupler module item and its Fabricator recipe |
+| D_Interactions | Massgate_Activate, Massgate_Radial | "Engage Massgate" (press, button-trigger behaviour) and "Lattice controls" (alt-press, radial behaviour) |
 | D_ProcessorRecipes | Massgate_<K> | Two Fabricator recipes |
 | D_Talents | Massgate_Gate | One tech-tree node at (4550, 700) unlocking every recipe |
 | D_MapIcons | Massgate_<K>_<CH> | Map and compass icon per kind and channel; the Lua attaches the game's map-icon component and repoints it on tune |
@@ -109,8 +114,7 @@ Not yet tested with a second player.
 
 ## Roadmap
 
-- Radial wheel for colour selection, power and pick-up (alt-press).
-- Upgrade modules slotted in the buffer panel.
+- More modules: wider field, faster charge, stabiliser for cheaper trips.
 - Real-rules test with power once a T4 base is available.
 - Placement-time interference check with a visible refusal.
 - Proper toast notification instead of the chat box.

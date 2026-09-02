@@ -45,10 +45,12 @@ Two parts ship together and both are required:
 python tools\build.py --merge-installed --dev --install
 ```
 
-`--dev` makes the recipe free (1 Fiber), removes the blueprint requirement and lets you
-craft it from your inventory, and sets `DevMode = true` in the installed `config.lua`, which
-turns off the power, Exotics and cooldown checks and shrinks the interference radius to
-10 m. Rebuild without `--dev` to get the real rules back. Never ship a dev build.
+`--dev` makes every Massgate recipe free (1 Fiber), removes the blueprint requirement, lets you
+craft from your inventory, and adds a dev-only recipe turning 1 Fiber into 200 Exotics. It sets
+`DevMode = true` in the installed `config.lua`: anchors count as powered, the cooldown is off and
+the interference radius is 10 m. Resonators still need power or a Phase Coupler, and trips still
+cost Exotics, so the buffer and the coupler can be tested. Rebuild without `--dev` for the real
+rules. Never ship a dev build.
 
 ## Layout
 
