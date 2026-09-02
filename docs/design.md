@@ -55,8 +55,8 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Placement | Must be outside | Fits the interference lore and keeps gates visible |
 
 Dev mode (see README) treats anchors as powered, drops the cooldown, shrinks interference to
-10 m, makes the recipes free and adds a fiber-to-Exotics recipe. Resonators still need power or a
-coupler, and trips still cost Exotics, so the buffer and the coupler are testable early.
+10 m, makes the recipes free and makes trips cost no Exotics. Resonators still need power or a
+coupler, so the coupler is testable early.
 
 ## How it is built
 

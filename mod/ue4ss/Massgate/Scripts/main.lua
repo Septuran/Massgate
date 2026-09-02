@@ -100,7 +100,10 @@ if DEV_MODE then
     CONFIG.DevAnchorsPowered    = true
     CONFIG.CooldownSeconds      = 0
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m
-    log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference")
+    CONFIG.ExoticsOutbound      = 0    -- trips are free: the buffer was verified working 2026-09-02
+    CONFIG.ExoticsInbound       = 0
+    CONFIG.CouplerExtraExotics  = 0
+    log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference, free trips")
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end

@@ -13,7 +13,7 @@ version number honest.
 
 ## 2. Test the exact build you will ship
 
-Dev builds differ from releases (free recipes, powered anchors, fiber-to-Exotics). Before
+Dev builds differ from releases (free recipes, powered anchors, free trips). Before
 packaging, install a **non-dev** build and play it:
 
 ```
