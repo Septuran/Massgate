@@ -264,6 +264,53 @@ def pack(repak: Path, version: str) -> Path:
     return out
 
 
+def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str) -> None:
+    lua_channels = ", ".join(f'"{c}"' for c in channels)
+    (scripts_dir / "config.lua").write_text(
+        "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
+        "return {\n"
+        f"    Version = \"{version}\",\n"
+        f"    DevMode = {'true' if dev else 'false'},\n"
+        f"    Channels = {{ {lua_channels} }},\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+RELEASE_README = """Massgate {version} for Icarus
+================================
+
+Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\Win64\\ue4ss\\).
+
+1. Copy {pak} into
+   <Icarus>\\Icarus\\Content\\Paks\\mods\\      (lowercase "mods"; create it if missing;
+                                              remove any older Massgate_v*_P.pak first)
+2. Copy the folder "Massgate" into
+   <Icarus>\\Icarus\\Binaries\\Win64\\ue4ss\\Mods\\
+3. Start the game. The "Mods Detected" dialog lists the pak; ue4ss\\UE4SS.log shows
+   "Massgate v{version} loaded".
+
+Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
+
+Source, docs and issues: https://github.com/Septuran/Massgate
+"""
+
+
+def package(pak: Path, dev: bool, channels: list[str], version: str) -> Path:
+    """Build the distributable zip: the pak, the Lua mod folder and a README."""
+    release_dir = BUILD / "release"
+    staging = release_dir / f"Massgate_v{version}"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    shutil.copy2(pak, staging / pak.name)
+    shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
+    write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
+    (staging / "README.txt").write_text(RELEASE_README.format(version=version, pak=pak.name), encoding="utf-8")
+    archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
+    return Path(archive)
+
+
 def install(pak: Path, dev: bool, channels: list[str], version: str) -> None:
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
@@ -286,17 +333,7 @@ def install(pak: Path, dev: bool, channels: list[str], version: str) -> None:
     if target.exists():
         shutil.rmtree(target)
     shutil.copytree(LUA_MOD, target)
-    config = target / "Scripts" / "config.lua"
-    lua_channels = ", ".join(f'"{c}"' for c in channels)
-    config.write_text(
-        "-- Written by tools/build.py at install time. Edit the repo copy, not this file.\n"
-        "return {\n"
-        f"    Version = \"{version}\",\n"
-        f"    DevMode = {'true' if dev else 'false'},\n"
-        f"    Channels = {{ {lua_channels} }},\n"
-        "}\n",
-        encoding="utf-8",
-    )
+    write_config(target / "Scripts", dev, channels, version)
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
 
 
@@ -305,6 +342,7 @@ def main() -> int:
     ap.add_argument("--merge-installed", action="store_true")
     ap.add_argument("--dev", action="store_true")
     ap.add_argument("--install", action="store_true")
+    ap.add_argument("--package", action="store_true", help="build the release zip in build/release/")
     ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
     args = ap.parse_args()
 
@@ -312,6 +350,14 @@ def main() -> int:
         sys.exit("!! data/original missing: unpack data.pak first (see README)")
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
+    if args.package:
+        # A release must be reproducible from the pristine game tables and the committed tree.
+        if args.merge_installed:
+            sys.exit("!! --package cannot be combined with --merge-installed: a release is built on the original tables only")
+        if args.dev:
+            sys.exit("!! --package cannot be combined with --dev: never ship a dev build")
+        if git("status", "--porcelain"):
+            sys.exit("!! --package needs a clean git tree: commit first so the version number is reproducible")
 
     print("1. loading base tables")
     tables = load_base_tables(args.merge_installed)
@@ -338,6 +384,10 @@ def main() -> int:
     if args.install:
         print("7. installing")
         install(out, args.dev, patches.get("channels", []), version)
+    if args.package:
+        print("8. packaging")
+        archive = package(out, args.dev, patches.get("channels", []), version)
+        print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 
 

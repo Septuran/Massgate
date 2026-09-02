@@ -64,6 +64,16 @@ data/original/            extracted game tables (gitignored)
 data/installed/           tables from other installed mod paks (gitignored)
 ```
 
+### Release package
+
+```
+python toolsuild.py --package
+```
+
+Builds from the original tables only, refuses dev mode and uncommitted changes, and writes
+`buildelease\Massgate_v<version>.zip` (pak + Lua folder + README.txt). Full procedure in
+[docs/releasing.md](docs/releasing.md).
+
 ## Configuration
 
 `mod/ue4ss/Massgate/Scripts/config.lua` (rewritten in the game folder by `--install`):
