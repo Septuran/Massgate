@@ -1,0 +1,67 @@
+[size=5][b][color=#fff2cc]Description[/color][/b][/size]
+
+[u]Massgate[/u] adds [color=#fff2cc]exotic-matter gates[/color] to Icarus: fast travel for the mid-to-late game that stays a choice rather than a free ride.
+
+Every gate is a pair with two unequal ends. The [b][color=#9fd3ff]Anchor Lattice[/color][/b] is the base end: heavy, expensive, and hungry for power. The [b][color=#ffd39f]Resonator[/color][/b] is the field end: light, cheap, and needing only a small power supply. Tune both to the same colour charge ([color=#ff6b6b]Red[/color], [color=#7ee787]Green[/color] or [color=#79b8ff]Blue[/color]) and they lock to each other across any distance. Stand in the field of one, engage it, wait three seconds while the lattice charges, and you step out in front of the other.
+
+The trip is not symmetrical. Going [b]out[/b] to a Resonator burns Exotics loaded into the Anchor. Coming [b]home[/b] is free, carried by the Anchor's mass. Your mounts and pets that are set to Follow and standing in the field travel with you.
+
+[i]The lore fixes the number of channels at three, because there are exactly three colour charges and no fourth. A base can hold one Anchor per colour side by side, since a red-green-blue triplet is colour-neutral and stable. A Resonator has no such protection: any other gate within 500 m pulls it off frequency, so outposts must be far from each other and far from home.[/i]
+
+[line]
+
+[size=5][b][color=#fff2cc]Installation instructions[/color][/b][/size]
+
+Massgate has [b]two parts[/b] and both are required.
+
+[list=1]
+[*]Install [b]UE4SS 3.0.1[/b] for Icarus if you do not have it (see Requirements). After installing, your game folder has [code]Icarus\Binaries\Win64\ue4ss\[/code] with a [code]Mods[/code] folder inside it.
+[*]Download the Massgate archive and open it. It contains a pak file named [code]Massgate_v<version>_P.pak[/code] and a folder named [code]Massgate[/code].
+[*]Copy the pak file into [code]Icarus\Content\Paks\mods\[/code] (create the [code]mods[/code] folder, lowercase, if it does not exist). Remove any older [code]Massgate_v..._P.pak[/code] first; only one may be present.
+[*]Copy the [code]Massgate[/code] folder into [code]Icarus\Binaries\Win64\ue4ss\Mods\[/code]. You should end up with [code]...\ue4ss\Mods\Massgate\Scripts\main.lua[/code] and [code]...\ue4ss\Mods\Massgate\enabled.txt[/code].
+[*]Start the game. The "Mods Detected" dialog lists the Massgate pak with its version. The file [code]Icarus\Binaries\Win64\ue4ss\UE4SS.log[/code] contains a line [code]Massgate v... loaded[/code] if the Lua side started.
+[/list]
+
+[size=4][b][color=#fff2cc]Getting started in game[/color][/b][/size]
+
+[list]
+[*]Unlock the [b]Massgate[/b] blueprint in the Tier 4 Fabricator tree. It sits next to the Exotic Processor and requires it.
+[*]Craft an [color=#9fd3ff]Anchor Lattice[/color] and a [color=#ffd39f]Resonator[/color] at a Fabricator.
+[*]Place the Anchor at your base on the power grid. Place the Resonator at least [b]500 m[/b] away, outdoors, with its own small power source (a wind turbine or two solar panels are enough).
+[*]Look at each gate and use the [b]alternate-interact[/b] key (the one that opens radial menus on other deployables) to open the [b]Lattice controls[/b] wheel. Pick the same colour on both.
+[*][b]Hold interact[/b] on the Anchor to open its panel and load Exotics into the four fuel slots.
+[*][b]Press interact[/b] on a gate to Engage. Stay inside the field (8 m) for three seconds.
+[/list]
+
+[b]Multiplayer:[/b] every player needs the pak, and everyone should install the Lua as well. On a dedicated server the server must run UE4SS (Windows only). Hosted co-op works from the host.
+
+[line]
+
+[size=5][b][color=#fff2cc]Main features[/color][/b][/size]
+
+[list]
+[*][b]Paired gates, two kinds.[/b] Anchor Lattice at base, Resonator in the field. One pair per colour charge, three colours per prospect.
+[*][b]Asymmetric cost.[/b] Outbound trips cost Exotics from the Anchor's buffer; inbound trips are free.
+[*][b]Real constraints.[/b] Both ends need power. Resonators refuse to tune with any other gate within 500 m. Three-second charge-up; leave the field and it aborts. Cooldown after each trip.
+[*][b]Tames travel with you[/b] if they are set to Follow and stand in the field. Your farm stays put.
+[*][b]Lattice panel.[/b] Hold interact for the game's storage panel: four Exotics-only slots and one module slot.
+[*][b]Phase Coupler module.[/b] Slot it into an Anchor and its Resonator no longer needs a power supply: the Anchor pushes energy along the colour channel. Outbound trips then cost extra.
+[*][b]Control wheel.[/b] Alternate-interact opens the game's radial menu: Tune Red, Tune Green, Tune Blue, Power On/Off, Pick Up.
+[*][b]Map and compass icons[/b] per gate, coloured by channel, with the kind and colour on hover.
+[*][b]Safe arrival.[/b] You land on traced ground in front of the destination gate.
+[*]Colours are stored per gate and survive save and load.
+[/list]
+
+[i]Balance numbers (may change between versions):[/i] Anchor 2500 power and a heavy recipe including 200 Exotics; Resonator 500 power and a light recipe including 60 Exotics; 5 Exotics per outbound trip, 8 when coupled; 20 s cooldown; 500 m interference.
+
+[line]
+
+[size=5][b][color=#fff2cc]Requirements[/color][/b][/size]
+
+[list]
+[*][b]Icarus[/b] on Windows (PC, Steam). Not tested on other storefronts.
+[*][b]UE4SS 3.0.1[/b] (the version with the [code]ue4ss[/code] sub-folder layout under [code]Binaries\Win64[/code]). Newer UE4SS releases changed the folder layout and are not supported by this release.
+[*][b]Load order and other mods.[/b] Massgate ships full copies of the data tables it changes (items, recipes, talents, interactions, map icons and a few trait tables). If another mod also replaces one of those tables, whichever pak loads last wins. Use the Icarus Mod Manager to merge mods that touch the same tables, or make sure Massgate is the only one touching them.
+[*][b]Dedicated servers[/b] must be Windows and run UE4SS with the Massgate Lua installed; clients need the pak (and should have the Lua for the correct looks and icons).
+[*]Source and issue tracker: [url=https://github.com/Septuran/Massgate]github.com/Septuran/Massgate[/url]
+[/list]
