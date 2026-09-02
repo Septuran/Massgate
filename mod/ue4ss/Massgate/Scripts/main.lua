@@ -82,7 +82,7 @@ local CONFIG = {
     -- Sounds: FMOD events shipped with the game (object paths). Chosen by ear from decoded samples.
     SoundsEnabled        = true,
     Sounds = {
-        Charge  = "/Game/FMOD/Events/SFX/Deployable/Trail_Beacon/SFX_TRAIL_BEACON_ACTIVATE.SFX_TRAIL_BEACON_ACTIVATE",
+        Charge  = "/Game/FMOD/Events/SFX/Deployable/Trail_Beacon/SFX_DEP_TRAIL_BEACON_BEEP.SFX_DEP_TRAIL_BEACON_BEEP", -- 4.55 s, carries the "beacon link" sample
         Transit = "/Game/FMOD/Events/SFX/Deployable/Laser/SFX_LASER_START.SFX_LASER_START",
         Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
@@ -495,7 +495,8 @@ local function playEventAt(path, contextActor, loc)
     local ok, err = pcall(function()
         local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
         if not valid(lib) then error("audio library not found") end
-        lib:PlayReplicatedOneShot(contextActor, ev, transform, false, true)
+        -- No occlusion: the sound sits inside the gate mesh and would be muffled by it.
+        lib:PlayReplicatedOneShot(contextActor, ev, transform, false, false)
     end)
     if ok then return true end
     local ok2, err2 = pcall(function()
@@ -509,8 +510,10 @@ local function playEventAt(path, contextActor, loc)
     return false
 end
 
+-- Sounds play a metre and a half above the gate's origin, clear of its mesh.
 local function playSound(name, actor, loc)
-    return playEventAt(CONFIG.Sounds[name], actor, loc or locationOf(actor))
+    local at = loc or locationOf(actor)
+    return playEventAt(CONFIG.Sounds[name], actor, { X = at.X, Y = at.Y, Z = at.Z + 150 })
 end
 
 -- How long the charge-up runs: the Charge event's length as FMOD reports it, else the config value.
