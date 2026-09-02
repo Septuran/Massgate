@@ -74,7 +74,7 @@ local CONFIG = {
     MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
     MapIconsLibrary      = "/Script/Icarus.Default__MapIconsLibrary",
     MapIconsTable        = "/Engine/Transient.D_MapIcons",
-    IconRefreshMs        = 4000,                       -- re-check crystals and repoint icons
+    IconRefreshMs        = 15000,                      -- re-check crystals and repoint icons
     Debug                = true,
 }
 
@@ -269,19 +269,32 @@ local function isGate(actor)
     return kindOf(actor) ~= nil
 end
 
-local function allGates()
-    local gates, seen = {}, {}
+-- Registry of gate actors. Filled once by a world scan when the mod hooks in, then kept
+-- current by the spawn notifications; never rescanned on a timer (scanning every object in the
+-- game every few seconds is what caused the stutter).
+local registry = {} -- full name -> actor
+
+local function register(actor)
+    if isGate(actor) then registry[fullName(actor)] = actor end
+end
+
+local function scanWorldForGates()
     for _, className in ipairs(CONFIG.GateClasses) do
         local ok, objects = pcall(FindAllOf, className)
         if ok and objects then
-            for _, actor in ipairs(objects) do
-                local kind, channel = identify(actor)
-                local name = kind and fullName(actor)
-                if kind and not seen[name] then
-                    seen[name] = true
-                    gates[#gates + 1] = { actor = actor, kind = kind, channel = channel }
-                end
-            end
+            for _, actor in ipairs(objects) do register(actor) end
+        end
+    end
+end
+
+local function allGates()
+    local gates = {}
+    for name, actor in pairs(registry) do
+        if valid(actor) then
+            local kind, channel = identify(actor)
+            if kind then gates[#gates + 1] = { actor = actor, kind = kind, channel = channel } end
+        else
+            registry[name] = nil
         end
     end
     return gates
@@ -307,23 +320,28 @@ local function isPowered(gate)
     return ok2 and running == true
 end
 
+-- Stack size lives in the item's dynamic data as (PropertyType = ItemableStack, Value = n).
+-- Never hand the item struct to a native function: that crashed the game.
+local stackDebugged = false
 local function stackOf(item)
-    -- The game's own helper knows how stack sizes are stored.
-    local ok, count = pcall(function()
-        local lib = StaticFindObject("/Script/Icarus.Default__InventoryItemLibrary")
-        return lib:GetItemStackCount(item)
+    local count, seen = nil, {}
+    local ok, err = pcall(function()
+        item.ItemDynamicData:ForEach(function(index, elem)
+            local entry = elem:get()
+            local ptype, value = tonumber(entry.PropertyType), tonumber(entry.Value)
+            seen[#seen + 1] = tostring(entry.PropertyType) .. "=" .. tostring(entry.Value)
+            if ptype == CONFIG.StackProperty then count = value end
+        end)
     end)
-    if ok and tonumber(count) and tonumber(count) > 0 then return tonumber(count) end
-    -- Fallback: read the dynamic property directly.
-    local fallback = 1
-    pcall(function()
-        local dyn = item.ItemDynamicData
-        for i = 1, #dyn do
-            local entry = dyn[i]
-            if tonumber(entry.PropertyType) == CONFIG.StackProperty then fallback = entry.Value end
-        end
-    end)
-    return fallback
+    if not ok and not stackDebugged then
+        stackDebugged = true
+        log("stack read failed: %s", tostring(err))
+    end
+    if count == nil and not stackDebugged then
+        stackDebugged = true
+        dbg("stack property not found; dynamic data = [%s]", table.concat(seen, ", "))
+    end
+    return count or 1
 end
 
 local function exoticsIn(inv)
@@ -457,6 +475,41 @@ local function applyLook(actor, kind)
     if not ok then log("applyLook failed: %s", tostring(err)) end
 end
 
+-- One-time diagnostic: a few seconds after the look pass, list every component on the actor
+-- so whatever still draws a box can be identified.
+local dumped = {}
+local function dumpComponentsLater(actor)
+    local key = fullName(actor)
+    if dumped[key] then return end
+    dumped[key] = true
+    ExecuteWithDelay(3000, function()
+        ExecuteInGameThread(function()
+            pcall(function()
+                if not valid(actor) then return end
+                local comps = actor:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.ActorComponent"))
+                local parts = {}
+                for i = 1, #comps do
+                    local c = comps[i]
+                    local vis = "-"
+                    pcall(function() vis = tostring(c:IsVisible()) end)
+                    local cls = fullName(c):match("^(%S+)") or "?"
+                    parts[#parts + 1] = string.format("%s:%s vis=%s", cls, shortName(c), vis)
+                end
+                log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
+                pcall(function()
+                    local out = {}
+                    actor:GetAttachedActors(out, true)
+                    if #out > 0 then
+                        local names = {}
+                        for i = 1, #out do names[#names + 1] = fullName(out[i]) end
+                        log("attached actors of %s: %s", shortName(actor), table.concat(names, " | "))
+                    end
+                end)
+            end)
+        end)
+    end)
+end
+
 ------------------------------------------------------------------------------------------
 -- Map icon: the game's map-icon component pointing at Massgate_<Kind>_<Colour|None>
 ------------------------------------------------------------------------------------------
@@ -504,7 +557,6 @@ local function updateMapIcon(actor, kind, channel)
         if not valid(compClass) then return log("map icon component class not found") end
         local comp = findMapIcon(actor, compClass)
         if comp then
-            dbg("reusing map icon component %s (class %s)", shortName(comp), fullName(comp:GetClass()))
             pcall(function() comp:TryRemoveMapIcon() end)
             pointMapIcon(comp, row)
             pcall(function() comp:TrySetupMapIcon() end)
@@ -854,6 +906,7 @@ local function tryHook()
     if ok then
         hooked = true
         log("hooked %s", CONFIG.ButtonInteractHook)
+        scanWorldForGates()
         refreshAllIcons()
     else
         dbg("hook not available yet (%s)", tostring(err))
@@ -866,7 +919,8 @@ LoopAsync(5000, function()
     return hooked
 end)
 
--- Crystals can be swapped in the panel at any time; keep the icons honest.
+-- Crystals can be swapped in the panel at any time. Re-read them from the registry (cheap: a few
+-- inventory slot reads, no world scan) every IconRefreshMs.
 LoopAsync(CONFIG.IconRefreshMs, function()
     if hooked then ExecuteInGameThread(function() pcall(refreshAllIcons) end) end
     return false
@@ -878,10 +932,12 @@ for _, bpPath in ipairs(CONFIG.GateBlueprints) do
             ExecuteInGameThread(function()
                 local kind, channel = identify(actor)
                 if kind then
+                    register(actor)
                     log("%s [%s] spawned at %s powered=%s exotics=%d panel=%s", kind, tostring(channel), fmtLoc(locationOf(actor)),
                         tostring(isPowered(actor)), (exoticsIn(panelOf(actor))), tostring(panelOf(actor) ~= nil))
                     applyLook(actor, kind)
                     updateMapIcon(actor, kind, channel)
+                    dumpComponentsLater(actor)
                 end
             end)
         end)
