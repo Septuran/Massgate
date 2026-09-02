@@ -1252,11 +1252,17 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
         end
         local ev = loadEvent(path)
         if not ev then Ar:Log("[Massgate] could not load " .. path) return true end
-        local ok, err = pcall(function()
-            local fmod = StaticFindObject("/Script/FMODStudio.Default__FMODBlueprintStatics")
-            fmod:PlayEvent2D(ctx, ev, true)
+        -- Same call the gates use, at the listener (the player's ears); falls back to the gate.
+        local loc = nil
+        pcall(function()
+            local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+            local l = lib:GetListenerLocation(ctx)
+            if l and l.X then loc = { X = l.X, Y = l.Y, Z = l.Z } end
         end)
-        Ar:Log(string.format("[Massgate] sfx %s (%.2f s) -> %s", path, eventLength(ev), ok and "played" or tostring(err)))
+        loc = loc or locationOf(ctx)
+        soundFailed[path] = nil
+        local played = playEventAt(path, ctx, loc)
+        Ar:Log(string.format("[Massgate] sfx %s (%.2f s) at %s -> %s", path, eventLength(ev), fmtLoc(loc), played and "played" or "FAILED (see UE4SS.log)"))
         return true
     end
     if Parameters[1] == "sfxscan" then
