@@ -45,10 +45,10 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Anchor placement | Anchors ignore each other for interference | A base can hold one pad per channel in a row |
 | Resonator placement | No other gate of any kind within 500 m, its own anchor included | Stops short hops and gate spam; forces outposts far apart and far from base |
 | Charge-up | 3 s after engaging; you must stay within 8 m of the gate | Gives the transit weight and a window to abort |
-| Outbound trip | 5 Exotics drawn from the anchor's own buffer | Pushing out is the expensive choice; the lattice is loaded like a furnace |
+| Outbound trip | 8 Exotics drawn from the anchor's own buffer, coupler or not | Pushing out is the expensive choice; the lattice is loaded like a furnace |
 | Panel | Hold interact opens six slots: four Exotics-only, one module, one Tuning Crystal | The game's storage panel doubles as fuel bay, upgrade bay and tuning control |
 | Tuning Crystal | Cheap per-colour item; no crystal means no channel | The channel control lives in the panel, no extra UI |
-| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; outbound trips cost 3 extra Exotics because the anchor pushes power too |
+| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; no extra Exotics (a surcharge was tried and found confusing) |
 | Inbound trip | Free, resonator to anchor | The anchor pulls you home |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
 | Tames | Your mounts and pets set to Follow within 8 m travel with you | F dismounts, so you engage on foot; only followers travel, so a farm stays put |

@@ -75,8 +75,8 @@ dedicated server the server must run UE4SS (Windows only). Hosted co-op works fr
 - Colours are stored per gate and survive save and load.
 
 Balance numbers (may change between versions): Anchor 2500 power and a heavy recipe including
-200 Exotics; Resonator 500 power and a light recipe including 60 Exotics; 5 Exotics per outbound
-trip, 8 when coupled; 20 s cooldown; 500 m interference.
+200 Exotics; Resonator 500 power and a light recipe including 60 Exotics; 8 Exotics per outbound
+trip; 20 s cooldown; 500 m interference.
 
 ## Requirements
 

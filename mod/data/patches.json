@@ -261,7 +261,7 @@
                     "Name": "Item_Massgate_Coupler",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-DisplayName\", \"Massgate Phase Coupler\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Modules/T_ITEM_MODULE_UTILITY_Movement.T_ITEM_MODULE_UTILITY_Movement",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (the fifth slot of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own. Pushing power as well as a prospector costs extra Exotics per outbound transit.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (the fifth slot of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-FlavorText\", \"Strike the bell hard enough and the fork sings on its own.\")",
                     "Weight": 5000,
                     "MaxStack": 1

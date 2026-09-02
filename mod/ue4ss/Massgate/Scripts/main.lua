@@ -45,7 +45,6 @@ local CONFIG = {
     TuningSlot           = 5,
     CrystalRowPrefix     = "Massgate_Crystal_",        -- Massgate_Crystal_<Colour>
     CouplerRow           = "Massgate_Coupler",
-    CouplerExtraExotics  = 3,
     StackProperty        = 7,                          -- EDynamicItemProperties::ItemableStack
     RequirePower         = true,
     DevAnchorsPowered    = false,
@@ -62,7 +61,7 @@ local CONFIG = {
     ArrivalLiftCm        = 100,
     TraceUpCm            = 300,
     TraceDownCm          = 800,
-    ExoticsOutbound      = 5,
+    ExoticsOutbound      = 8,                          -- flat; the coupler adds nothing
     ExoticsInbound       = 0,
     -- Looks: the crate actor draws its own box through its DeployableSK skeletal mesh (plus two
     -- static-mesh crate parts). Hide those by name and put our mesh in the DeployableSM slot.
@@ -102,7 +101,6 @@ if DEV_MODE then
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m
     CONFIG.ExoticsOutbound      = 0    -- trips are free: the buffer was verified working 2026-09-02
     CONFIG.ExoticsInbound       = 0
-    CONFIG.CouplerExtraExotics  = 0
     log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference, free trips")
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
@@ -727,9 +725,7 @@ end
 
 local function tripCost(kind, anchor)
     if kind ~= "Anchor" then return CONFIG.ExoticsInbound end
-    local cost = CONFIG.ExoticsOutbound
-    if anchor and hasCoupler(anchor) then cost = cost + CONFIG.CouplerExtraExotics end
-    return cost
+    return CONFIG.ExoticsOutbound
 end
 
 -- Returns powered, source ("grid" | "coupled" | "dev" | "none").
