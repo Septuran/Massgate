@@ -1,5 +1,5 @@
 {
-    "_comment": "Rows Massgate adds to the Icarus data tables. Applied by tools/build.py on top of the base tables. Row names are prefixed Massgate_ so they never collide with the game or other mods. Tables marked per_channel are expanded once per entry in channels, with {CH} replaced by the channel name; the Lua side reads the channel back from the item row name (Massgate_Gate_<CH>).",
+    "_comment": "Rows Massgate adds to the Icarus data tables. Applied by tools/build.py on top of the base tables. Row names are prefixed Massgate_ so they never collide with the game or other mods. Tables marked per_channel are expanded once per entry in channels, with {CH} replaced by the channel name. Row naming is Massgate_<Kind>_<Channel>, Kind = Anchor (base end) or Resonator (field end); the Lua side parses both back out of the item row name, so adding channels here is all it takes.",
     "channels": ["Alpha", "Beta", "Gamma"],
     "tables": [
         {
@@ -7,19 +7,49 @@
             "per_channel": true,
             "add": [
                 {
-                    "Name": "Massgate_Gate_{CH}",
+                    "Name": "Massgate_Anchor_{CH}",
                     "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
-                    "Itemable": { "RowName": "Item_Massgate_Gate_{CH}" },
+                    "Itemable": { "RowName": "Item_Massgate_Anchor_{CH}" },
                     "Interactable": { "RowName": "Massgate_Gate" },
                     "Focusable": { "RowName": "Focusable_1H" },
                     "Highlightable": { "RowName": "Generic" },
                     "Actionable": { "RowName": "Deployable" },
                     "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Gate" },
+                    "Deployable": { "RowName": "Massgate_Anchor" },
                     "Durable": { "RowName": "Deployable_5000" },
                     "Decayable": { "RowName": "Decay_10_Minutes" },
                     "Weight": { "RowName": "HeavyDeployable" },
-                    "Resource": { "RowName": "Massgate_Gate" },
+                    "Resource": { "RowName": "Massgate_Anchor" },
+                    "Audio": { "RowName": "MetalDeployable" },
+                    "CraftingExperience": 0,
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            { "TagName": "Traits.Meshable" },
+                            { "TagName": "Traits.Itemable" },
+                            { "TagName": "Traits.Interactable" },
+                            { "TagName": "Traits.Highlightable" },
+                            { "TagName": "Traits.Actionable" },
+                            { "TagName": "Traits.Usable" },
+                            { "TagName": "Traits.Deployable" },
+                            { "TagName": "Traits.Durable" }
+                        ],
+                        "ParentTags": []
+                    }
+                },
+                {
+                    "Name": "Massgate_Resonator_{CH}",
+                    "Meshable": { "RowName": "Mesh_Generic_Fabricator" },
+                    "Itemable": { "RowName": "Item_Massgate_Resonator_{CH}" },
+                    "Interactable": { "RowName": "Massgate_Gate" },
+                    "Focusable": { "RowName": "Focusable_1H" },
+                    "Highlightable": { "RowName": "Generic" },
+                    "Actionable": { "RowName": "Deployable" },
+                    "Usable": { "RowName": "Place" },
+                    "Deployable": { "RowName": "Massgate_Resonator" },
+                    "Durable": { "RowName": "Deployable_2500" },
+                    "Decayable": { "RowName": "Decay_10_Minutes" },
+                    "Weight": { "RowName": "MediumDeployable" },
+                    "Resource": { "RowName": "Massgate_Resonator" },
                     "Audio": { "RowName": "MetalDeployable" },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
@@ -42,10 +72,8 @@
             "table": "Items/D_ItemTemplate.json",
             "per_channel": true,
             "add": [
-                {
-                    "Name": "Massgate_Gate_{CH}",
-                    "ItemStaticData": { "RowName": "Massgate_Gate_{CH}" }
-                }
+                { "Name": "Massgate_Anchor_{CH}", "ItemStaticData": { "RowName": "Massgate_Anchor_{CH}" } },
+                { "Name": "Massgate_Resonator_{CH}", "ItemStaticData": { "RowName": "Massgate_Resonator_{CH}" } }
             ]
         },
         {
@@ -53,19 +81,28 @@
             "per_channel": true,
             "add": [
                 {
-                    "Name": "Item_Massgate_Gate_{CH}",
-                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate_{CH}-DisplayName\", \"Massgate Transit Lattice ({CH})\")",
+                    "Name": "Item_Massgate_Anchor_{CH}",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor_{CH}-DisplayName\", \"Massgate Anchor Lattice ({CH})\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate_{CH}-Description\", \"A lattice of stabilised exotic matter held in a powered containment frame, tuned to channel {CH}. Two powered lattices on the same channel exchange whatever stands inside their fields, prospector included. Each transit burns Exotics to re-stabilise the lattice, and lattices built too close to any other lattice interfere and refuse to tune.\")",
-                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate_{CH}-FlavorText\", \"Exotics do not move through space. Space moves around them. UDA Field Manual, addendum 7, classified.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor_{CH}-Description\", \"The base end of a Massgate pair on channel {CH}. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Anchors lock to the shared grid of the base, so any number of them can stand side by side. Needs heavy power. Outbound transits burn Exotics; inbound ones are carried by the anchor's own mass.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor_{CH}-FlavorText\", \"Exotics do not move through space. Space moves around them. UDA Field Manual, addendum 7, classified.\")",
                     "Weight": 40000,
+                    "MaxStack": 1
+                },
+                {
+                    "Name": "Item_Massgate_Resonator_{CH}",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator_{CH}-DisplayName\", \"Massgate Resonator ({CH})\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator_{CH}-Description\", \"The field end of a Massgate pair on channel {CH}. A sliver of exotic lattice, just enough to phase-lock to one Anchor. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator_{CH}-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
+                    "Weight": 15000,
                     "MaxStack": 1
                 }
             ]
         },
         {
             "table": "Items/D_ItemsStatic.json",
-            "_comment": "Legacy pre-channel row so gates placed with v0.1 keep loading. No recipe; Lua treats it as channel Alpha.",
+            "_comment": "Legacy pre-channel row so gates placed with v0.1 keep loading. No recipe; Lua treats it as Anchor / Alpha.",
             "add": [
                 {
                     "Name": "Massgate_Gate",
@@ -76,11 +113,11 @@
                     "Highlightable": { "RowName": "Generic" },
                     "Actionable": { "RowName": "Deployable" },
                     "Usable": { "RowName": "Place" },
-                    "Deployable": { "RowName": "Massgate_Gate" },
+                    "Deployable": { "RowName": "Massgate_Anchor" },
                     "Durable": { "RowName": "Deployable_5000" },
                     "Decayable": { "RowName": "Decay_10_Minutes" },
                     "Weight": { "RowName": "HeavyDeployable" },
-                    "Resource": { "RowName": "Massgate_Gate" },
+                    "Resource": { "RowName": "Massgate_Anchor" },
                     "Audio": { "RowName": "MetalDeployable" },
                     "CraftingExperience": 0,
                     "Generated_Tags": {
@@ -102,10 +139,7 @@
         {
             "table": "Items/D_ItemTemplate.json",
             "add": [
-                {
-                    "Name": "Massgate_Gate",
-                    "ItemStaticData": { "RowName": "Massgate_Gate" }
-                }
+                { "Name": "Massgate_Gate", "ItemStaticData": { "RowName": "Massgate_Gate" } }
             ]
         },
         {
@@ -113,9 +147,9 @@
             "add": [
                 {
                     "Name": "Item_Massgate_Gate",
-                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-DisplayName\", \"Massgate Transit Lattice (Alpha, legacy)\")",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-DisplayName\", \"Massgate Lattice (legacy, Anchor Alpha)\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-Description\", \"An early lattice tuned to channel Alpha. Pick it up and place a current Alpha lattice instead.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Gate-Description\", \"An early prototype lattice. Behaves as an Anchor on channel Alpha. Pick it up and place a current Anchor instead.\")",
                     "Weight": 40000,
                     "MaxStack": 1
                 }
@@ -125,10 +159,14 @@
             "table": "Traits/D_Deployable.json",
             "add": [
                 {
-                    "Name": "Massgate_Gate",
-                    "Variants": [
-                        { "RowName": "Massgate_Gate", "DataTableName": "D_DeployableSetup" }
-                    ],
+                    "Name": "Massgate_Anchor",
+                    "Variants": [ { "RowName": "Massgate_Anchor", "DataTableName": "D_DeployableSetup" } ],
+                    "EffectedByWeather": false,
+                    "bMustBeOutside": true
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "Variants": [ { "RowName": "Massgate_Resonator", "DataTableName": "D_DeployableSetup" } ],
                     "EffectedByWeather": false,
                     "bMustBeOutside": true
                 }
@@ -138,11 +176,21 @@
             "table": "Deployables/D_DeployableSetup.json",
             "add": [
                 {
-                    "Name": "Massgate_Gate",
+                    "Name": "Massgate_Anchor",
                     "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
                     "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
-                    "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Gate-DeployableName\", \"Massgate\")",
+                    "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Anchor-DeployableName\", \"Anchor Lattice\")",
                     "PreviewStaticMesh": "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
+                    "DeployedSound": "/Game/FMOD/Events/SFX/D_Buildables/SFX_DEPLOY_METAL_ITEM.SFX_DEPLOY_METAL_ITEM",
+                    "MaxRestackingAmount": 1,
+                    "NavAreaClass": "Class'/Script/NavigationSystem.NavArea_Obstacle'"
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
+                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Tesla_Coil.T_ITEM_Tesla_Coil",
+                    "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Massgate_Resonator-DeployableName\", \"Resonator\")",
+                    "PreviewStaticMesh": "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
                     "DeployedSound": "/Game/FMOD/Events/SFX/D_Buildables/SFX_DEPLOY_METAL_ITEM.SFX_DEPLOY_METAL_ITEM",
                     "MaxRestackingAmount": 1,
                     "NavAreaClass": "Class'/Script/NavigationSystem.NavArea_Obstacle'"
@@ -152,23 +200,15 @@
         {
             "table": "Traits/D_Resource.json",
             "add": [
-                {
-                    "Name": "Massgate_Gate",
-                    "bHasEnergyConnection": true,
-                    "EnergyFlow": { "RowName": "Massgate_Gate" }
-                }
+                { "Name": "Massgate_Anchor", "bHasEnergyConnection": true, "EnergyFlow": { "RowName": "Massgate_Anchor" } },
+                { "Name": "Massgate_Resonator", "bHasEnergyConnection": true, "EnergyFlow": { "RowName": "Massgate_Resonator" } }
             ]
         },
         {
             "table": "Traits/D_Energy.json",
             "add": [
-                {
-                    "Name": "Massgate_Gate",
-                    "AutoActivate": true,
-                    "ResourceFlowRate": 2500,
-                    "AutoShutoffFlowPercent": 99,
-                    "bAllowAutoRestart": true
-                }
+                { "Name": "Massgate_Anchor", "AutoActivate": true, "ResourceFlowRate": 2500, "AutoShutoffFlowPercent": 99, "bAllowAutoRestart": true },
+                { "Name": "Massgate_Resonator", "AutoActivate": true, "ResourceFlowRate": 500, "AutoShutoffFlowPercent": 99, "bAllowAutoRestart": true }
             ]
         },
         {
@@ -204,12 +244,10 @@
             "per_channel": true,
             "add": [
                 {
-                    "Name": "Massgate_Gate_{CH}",
+                    "Name": "Massgate_Anchor_{CH}",
                     "Requirement": { "RowName": "Massgate_Gate" },
                     "RequiredMillijoules": 300000,
-                    "RecipeSets": [
-                        { "RowName": "Fabricator", "DataTableName": "D_RecipeSets" }
-                    ],
+                    "RecipeSets": [ { "RowName": "Fabricator", "DataTableName": "D_RecipeSets" } ],
                     "Inputs": [
                         { "Element": { "RowName": "MetaResource", "DataTableName": "D_ItemsStatic" }, "Count": 200 },
                         { "Element": { "RowName": "Electronics", "DataTableName": "D_ItemsStatic" }, "Count": 40 },
@@ -219,12 +257,25 @@
                         { "Element": { "RowName": "Powerbank", "DataTableName": "D_ItemsStatic" }, "Count": 4 }
                     ],
                     "Outputs": [
-                        {
-                            "Element": { "RowName": "Massgate_Gate_{CH}", "DataTableName": "D_ItemTemplate" },
-                            "Count": 1,
-                            "DynamicProperties": [],
-                            "Alterations": []
-                        }
+                        { "Element": { "RowName": "Massgate_Anchor_{CH}", "DataTableName": "D_ItemTemplate" }, "Count": 1, "DynamicProperties": [], "Alterations": [] }
+                    ],
+                    "Audio": { "RowName": "MachiningBench" }
+                },
+                {
+                    "Name": "Massgate_Resonator_{CH}",
+                    "Requirement": { "RowName": "Massgate_Gate" },
+                    "RequiredMillijoules": 120000,
+                    "RecipeSets": [ { "RowName": "Fabricator", "DataTableName": "D_RecipeSets" } ],
+                    "Inputs": [
+                        { "Element": { "RowName": "MetaResource", "DataTableName": "D_ItemsStatic" }, "Count": 60 },
+                        { "Element": { "RowName": "Electronics", "DataTableName": "D_ItemsStatic" }, "Count": 15 },
+                        { "Element": { "RowName": "Composites", "DataTableName": "D_ItemsStatic" }, "Count": 20 },
+                        { "Element": { "RowName": "Copper_Wire", "DataTableName": "D_ItemsStatic" }, "Count": 40 },
+                        { "Element": { "RowName": "Platinum_Ingot", "DataTableName": "D_ItemsStatic" }, "Count": 10 },
+                        { "Element": { "RowName": "Powerbank", "DataTableName": "D_ItemsStatic" }, "Count": 1 }
+                    ],
+                    "Outputs": [
+                        { "Element": { "RowName": "Massgate_Resonator_{CH}", "DataTableName": "D_ItemTemplate" }, "Count": 1, "DynamicProperties": [], "Alterations": [] }
                     ],
                     "Audio": { "RowName": "MachiningBench" }
                 }
@@ -235,13 +286,11 @@
             "add": [
                 {
                     "Name": "Massgate_Gate",
-                    "ExtraData": { "RowName": "Item_Massgate_Gate_Alpha", "DataTableName": "D_Itemable" },
+                    "ExtraData": { "RowName": "Item_Massgate_Anchor_Alpha", "DataTableName": "D_Itemable" },
                     "TalentTree": { "RowName": "Blueprint_T4_Fabricator" },
                     "Position": { "X": 4550, "Y": 700 },
                     "Size": { "X": 184, "Y": 184 },
-                    "RequiredTalents": [
-                        { "RowName": "Exotic_Processor", "DataTableName": "D_Talents" }
-                    ],
+                    "RequiredTalents": [ { "RowName": "Exotic_Processor", "DataTableName": "D_Talents" } ],
                     "DrawMethodOverride": "XThenY"
                 }
             ]

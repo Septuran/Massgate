@@ -1,47 +1,54 @@
 --[[
-    Massgate - paired exotic-matter transit gates for Icarus.
+    Massgate - exotic-matter transit gates for Icarus.
     UE4SS 3.0.1 Lua side. The items, recipes, tech-tree node and power draw live in the
-    data-table pak (mod/data/patches.json); this script adds the behaviour:
+    data-table pak (mod/data/patches.json); this script adds the behaviour.
 
-      * recognises our gates: Spotlight_Tripod actors whose item row is Massgate_Gate_<Channel>
-      * swaps their placeholder mesh for a gate-like one when they spawn
-      * on "Engage Massgate" (press interact) validates the pair, charges up, then moves
-        the player to the partner gate on the same channel, landing safely on the ground
-      * enforces: two gates per channel, both powered, minimum separation from any other
-        gate (interference), per-gate cooldown, stay in the field while charging
-      * brings your dismounted tames that stand in the field along (F dismounts, so you
-        cannot engage while riding anyway)
-      * talks to the player through the on-screen chat box
+    A gate is a Spotlight_Tripod actor whose item row is Massgate_<Kind>_<Channel>:
+      * Kind = Anchor     : the base end. Heavy, power hungry. Anchors ignore each other for
+                            interference, so a base can hold one anchor per channel side by side.
+      * Kind = Resonator  : the field end. Light, cheap, unshielded: it refuses to tune when
+                            ANY other gate (anchor or resonator) is within the interference radius,
+                            which also keeps it far from its own anchor.
+    A pair is one anchor and one resonator on the same channel. Channels come from the row
+    name, so adding channels in patches.json needs no change here.
 
-    Everything is wrapped in pcall and logged with the [Massgate] prefix so a failure
-    never takes the game down; check ue4ss/UE4SS.log while testing.
+    On "Engage Massgate" (press interact): validate the pair, charge up while the player stays in
+    the field, then move the player (and any of their tames set to Follow inside the field) to
+    the partner gate, landing on traced ground. Inbound trips (to the anchor) are carried by the
+    anchor's mass and cost nothing; outbound trips (to a resonator) burn Exotics.
+
+    Everything is wrapped in pcall and logged with the [Massgate] prefix so a failure never
+    takes the game down; check ue4ss/UE4SS.log while testing.
 ]]
 
 local CONFIG = {
-    GateRowPrefix        = "Massgate_Gate_",
+    RowPattern           = "^Massgate_(%a+)_(%w+)$", -- kind, channel
+    LegacyRow            = "Massgate_Gate",          -- v0.1 gates: treated as Anchor / Alpha
     GateClass            = "BP_Spotlight_Tripod_C",
     ButtonInteractHook   = "/Game/BP/Behaviours/Interactable/BP_Interactable_ButtonTrigger.BP_Interactable_ButtonTrigger_C:Interact",
-    GatesPerChannel      = 2,
-    RequirePower         = true,    -- both gates must be running
-    InterferenceRadiusCm = 50000,   -- 500 m: no other gate (any channel) may be closer
+    RequirePower         = true,    -- both ends must be running
+    InterferenceRadiusCm = 50000,   -- 500 m: a resonator refuses if any other gate is closer
     CooldownSeconds      = 20,      -- per gate, after a transit
     ChargeSeconds        = 3,       -- delay between engaging and the actual transit
     FieldRadiusCm        = 800,     -- the field: player must stay inside while charging, and
-                                    -- tames inside it travel along
-    BringTames           = true,    -- your dismounted mounts/pets in the field come with you
-    FollowingTamesOnly   = true,    -- ... but only those set to Follow, so a farm never travels
+                                    -- following tames inside it travel along
+    BringTames           = true,
+    FollowingTamesOnly   = true,    -- only tames set to Follow travel, so a farm never does
     MountClass           = "BP_Mount_Base_C",
     FollowState          = 1,       -- EMountMovementBehaviourState::Follow
-    TameSpacingCm        = 250,     -- lateral spacing for arriving tames
+    TameSpacingCm        = 250,
     ArrivalOffsetCm      = 150,     -- step out in front of the destination gate
-    ArrivalLiftCm        = 100,     -- capsule half-height-ish lift above the traced ground
-    TraceUpCm            = 300,     -- ground trace starts this far above the target
-    TraceDownCm          = 800,     -- ... and ends this far below it
-    ExoticsPerTrip       = 5,       -- TODO: actually deduct from the player's inventory
-    -- Placeholder look. The deployable is the game's Spotlight tripod; at spawn we swap its
-    -- mesh for this one (set to false to keep the tripod). Must match PreviewStaticMesh in
-    -- patches.json so the placement preview looks like the placed gate.
-    GateMesh             = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
+    ArrivalLiftCm        = 100,     -- lift above traced ground
+    TraceUpCm            = 300,
+    TraceDownCm          = 800,
+    ExoticsOutbound      = 5,       -- anchor -> resonator. TODO: actually deduct from inventory
+    ExoticsInbound       = 0,       -- resonator -> anchor: the anchor does the work
+    -- Looks. The deployable is the game's Spotlight tripod; at spawn we swap its mesh per kind.
+    -- Keep in sync with PreviewStaticMesh in patches.json. Set a kind to false to keep the tripod.
+    Meshes = {
+        Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
+        Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
+    },
     PlaceholderMeshMatch = "Tripod_Light",
     Debug                = true,
 }
@@ -60,15 +67,16 @@ local okCfg, userConfig = pcall(require, "config")
 local DEV_MODE = okCfg and type(userConfig) == "table" and userConfig.DevMode == true
 if DEV_MODE then
     CONFIG.RequirePower         = false
-    CONFIG.ExoticsPerTrip       = 0
+    CONFIG.ExoticsOutbound      = 0
+    CONFIG.ExoticsInbound       = 0
     CONFIG.CooldownSeconds      = 0
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m, enough to test the refusal at a base
     log("DEV MODE: no power, no exotics, no cooldown, 10 m interference radius")
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end
-if okCfg and type(userConfig) == "table" and userConfig.GateMesh ~= nil then
-    CONFIG.GateMesh = userConfig.GateMesh
+if okCfg and type(userConfig) == "table" and type(userConfig.Meshes) == "table" then
+    for kind, path in pairs(userConfig.Meshes) do CONFIG.Meshes[kind] = path end
 end
 
 ------------------------------------------------------------------------------------------
@@ -97,6 +105,10 @@ local function fullName(obj)
     return ok and name or "?"
 end
 
+local function metres(cm)
+    return string.format("%.0f m", cm / 100)
+end
+
 ------------------------------------------------------------------------------------------
 -- Gate discovery
 ------------------------------------------------------------------------------------------
@@ -109,19 +121,19 @@ local function rowNameOf(actor)
     return nil
 end
 
--- Returns the channel name for a gate actor, or nil when the actor is not a gate.
-local function channelOf(actor)
+-- Returns kind, channel for a gate actor, or nil when the actor is not a gate.
+local function identify(actor)
     if not valid(actor) then return nil end
     local row = rowNameOf(actor)
-    if row and row:sub(1, #CONFIG.GateRowPrefix) == CONFIG.GateRowPrefix then
-        return row:sub(#CONFIG.GateRowPrefix + 1)
-    end
-    if row == "Massgate_Gate" then return "Alpha" end -- v0.1 gates placed before channels
+    if not row then return nil end
+    if row == CONFIG.LegacyRow then return "Anchor", "Alpha" end
+    local kind, channel = row:match(CONFIG.RowPattern)
+    if kind == "Anchor" or kind == "Resonator" then return kind, channel end
     return nil
 end
 
 local function isGate(actor)
-    return channelOf(actor) ~= nil
+    return identify(actor) ~= nil
 end
 
 local function allGates()
@@ -129,8 +141,8 @@ local function allGates()
     local ok, objects = pcall(FindAllOf, CONFIG.GateClass)
     if ok and objects then
         for _, actor in ipairs(objects) do
-            local channel = channelOf(actor)
-            if channel then gates[#gates + 1] = { actor = actor, channel = channel } end
+            local kind, channel = identify(actor)
+            if kind then gates[#gates + 1] = { actor = actor, kind = kind, channel = channel } end
         end
     end
     return gates
@@ -156,31 +168,30 @@ local function tell(player, text)
 end
 
 ------------------------------------------------------------------------------------------
--- Look: swap the placeholder tripod mesh for the configured gate mesh
+-- Look: swap the placeholder tripod mesh for the kind's mesh
 ------------------------------------------------------------------------------------------
 
-local meshCache = nil
+local meshCache = {}
 
-local function loadGateMesh()
-    if not CONFIG.GateMesh then return nil end
-    if valid(meshCache) then return meshCache end
-    local path = CONFIG.GateMesh
+local function loadMesh(kind)
+    local path = CONFIG.Meshes[kind]
+    if not path then return nil end
+    if valid(meshCache[kind]) then return meshCache[kind] end
     local ok, mesh = pcall(StaticFindObject, path)
     if not ok or not valid(mesh) then
         ok, mesh = pcall(LoadAsset, (path:gsub("%.[^./]+$", "")))
     end
     if ok and valid(mesh) then
-        meshCache = mesh
+        meshCache[kind] = mesh
         return mesh
     end
-    log("could not load gate mesh %s (%s)", path, tostring(mesh))
+    log("could not load %s mesh %s (%s)", kind, path, tostring(mesh))
     return nil
 end
 
-local function applyGateLook(actor)
-    if not CONFIG.GateMesh then return end
+local function applyGateLook(actor, kind)
     local ok, err = pcall(function()
-        local mesh = loadGateMesh()
+        local mesh = loadMesh(kind)
         if not mesh then return end
         local smcClass = StaticFindObject("/Script/Engine.StaticMeshComponent")
         local components = actor:K2_GetComponentsByClass(smcClass)
@@ -193,7 +204,7 @@ local function applyGateLook(actor)
                 swapped = swapped + 1
             end
         end
-        dbg("look applied to %s (%d component(s) swapped)", fullName(actor), swapped)
+        dbg("%s look applied to %s (%d component(s) swapped)", kind, fullName(actor), swapped)
     end)
     if not ok then log("applyGateLook failed: %s", tostring(err)) end
 end
@@ -218,12 +229,12 @@ local function groundedDestination(partner, player)
         local hit = {}
         local wasHit = kismet:LineTraceSingle(
             player, startV, endV,
-            0,                  -- ETraceTypeQuery1 = Visibility
-            false,              -- trace complex
-            { player, partner }, -- actors to ignore (the gate itself must not count as ground)
-            0,                  -- no debug draw
+            0,                   -- ETraceTypeQuery1 = Visibility
+            false,               -- trace complex
+            { player, partner }, -- the gate itself must not count as ground
+            0,                   -- no debug draw
             hit,
-            true,               -- ignore self
+            true,                -- ignore self
             { R = 1, G = 0, B = 0, A = 1 }, { R = 0, G = 1, B = 0, A = 1 }, 0.0)
         if wasHit and hit.ImpactPoint then
             return hit.ImpactPoint.Z
@@ -241,14 +252,10 @@ local function groundedDestination(partner, player)
 end
 
 ------------------------------------------------------------------------------------------
--- Transit rules
+-- Tames: pressing F while riding dismounts, so a rider can never engage a gate. Instead the
+-- gate carries every tame of yours that is set to Follow and stands in the field.
 ------------------------------------------------------------------------------------------
 
-local lastTransit = {} -- gate full name -> os.time() of last use
-local charging    = {} -- gate full name -> true while a transit is charging
-
--- Pressing F while riding dismounts, so a rider can never engage a gate. Instead the
--- gate carries every tame of yours that stands in the field when the transit fires.
 local function ownsTame(player, tame)
     local ok, owns = pcall(function()
         local state = player:GetPlayerState()
@@ -287,48 +294,78 @@ local function moveTame(tame, dest, rotation)
     end
 end
 
--- Returns partner actor, or nil plus a reason string.
-local function resolvePartner(gate, channel, gates)
-    local same, nearest = {}, nil
+------------------------------------------------------------------------------------------
+-- Transit rules
+------------------------------------------------------------------------------------------
+
+local lastTransit = {} -- gate full name -> os.time() of last use
+local charging    = {} -- gate full name -> true while a transit is charging
+
+local function otherKind(kind)
+    return kind == "Anchor" and "Resonator" or "Anchor"
+end
+
+-- Returns the partner entry, or nil plus a reason string.
+local function resolvePartner(gate, kind, channel, gates)
     local here = locationOf(gate)
+    local partners, sameKindOnChannel = {}, 0
+    local nearestOffender = nil
+
     for _, entry in ipairs(gates) do
         if fullName(entry.actor) ~= fullName(gate) then
             local d = distance(here, locationOf(entry.actor))
-            if not nearest or d < nearest then nearest = d end
-            if entry.channel == channel then same[#same + 1] = entry.actor end
+            -- Interference: resonators are unshielded against everything; anchors only
+            -- mind resonators (anchors share the base's reference frame).
+            local offends = (kind == "Resonator") or (entry.kind == "Resonator")
+            if offends and d < CONFIG.InterferenceRadiusCm and (not nearestOffender or d < nearestOffender.d) then
+                nearestOffender = { d = d, entry = entry }
+            end
+            if entry.channel == channel then
+                if entry.kind == kind then
+                    sameKindOnChannel = sameKindOnChannel + 1
+                else
+                    partners[#partners + 1] = entry
+                end
+            end
         end
     end
-    if nearest and nearest < CONFIG.InterferenceRadiusCm then
-        return nil, string.format("Lattice interference: another Massgate is %.0f m away (need %.0f m).",
-            nearest / 100, CONFIG.InterferenceRadiusCm / 100)
+
+    if nearestOffender then
+        return nil, string.format("Lattice interference: a %s is %s away (need %s).",
+            nearestOffender.entry.kind, metres(nearestOffender.d), metres(CONFIG.InterferenceRadiusCm))
     end
-    if #same == 0 then
-        return nil, string.format("No partner lattice on channel %s. Build a second %s gate elsewhere.", channel, channel)
+    if sameKindOnChannel > 0 then
+        return nil, string.format("Channel %s has more than one %s. Remove the extra one.", channel, kind)
     end
-    if #same + 1 > CONFIG.GatesPerChannel then
-        return nil, string.format("Channel %s has %d lattices; only %d may be tuned. Remove the extras.",
-            channel, #same + 1, CONFIG.GatesPerChannel)
+    if #partners == 0 then
+        return nil, string.format("No %s on channel %s. Build one elsewhere on the prospect.", otherKind(kind), channel)
     end
-    return same[1], nil
+    if #partners > 1 then
+        return nil, string.format("Channel %s has %d %ss; only one may be tuned. Remove the extras.",
+            channel, #partners, otherKind(kind))
+    end
+    return partners[1], nil
 end
 
-local function checkReady(gate, player, partner)
+local function checkReady(gate, partner)
     if CONFIG.RequirePower then
-        if not isPowered(gate) then return "This Massgate is unpowered." end
-        if not isPowered(partner) then return "The destination Massgate is unpowered." end
+        if not isPowered(gate) then return "This lattice is unpowered." end
+        if not isPowered(partner) then return "The destination lattice is unpowered." end
     end
     return nil
 end
 
-local function performTransit(gate, player, partner, channel)
+local function performTransit(gate, kind, channel, player, partner)
     local here = locationOf(gate)
     local dest = groundedDestination(partner, player)
     local rotation = player:K2_GetActorRotation()
     local tames = tamesInField(gate, player) -- collect before the player moves away
+    local exotics = (kind == "Anchor") and CONFIG.ExoticsOutbound or CONFIG.ExoticsInbound
 
     local ok, moved = pcall(function() return player:K2_TeleportTo(dest, rotation) end)
     if not ok then
-        return tell(player, "Transit failed (engine refused the move). See UE4SS.log."), log("teleport error: %s", tostring(moved))
+        log("teleport error: %s", tostring(moved))
+        return tell(player, "Transit failed (engine refused the move). See UE4SS.log.")
     end
     if moved == false then
         -- Something solid where we wanted to land; fall back to right above the gate.
@@ -338,7 +375,6 @@ local function performTransit(gate, player, partner, channel)
         end)
     end
 
-    -- Tames line up to the right of the arrival point.
     if #tames > 0 then
         local right = partner:GetActorRightVector()
         for i, tame in ipairs(tames) do
@@ -353,27 +389,29 @@ local function performTransit(gate, player, partner, channel)
     local now = os.time()
     lastTransit[fullName(gate)] = now
     lastTransit[fullName(partner)] = now
-    log("transit [%s] %s -> %s (%.0f m) moved=%s tames=%d", channel, fmtLoc(here), fmtLoc(dest),
-        distance(here, dest) / 100, tostring(moved), #tames)
-    local parts = { "Transit complete." }
-    if CONFIG.ExoticsPerTrip > 0 then parts[#parts + 1] = string.format("%d Exotics consumed.", CONFIG.ExoticsPerTrip) end
+    log("transit [%s] %s -> %s: %s -> %s (%s) moved=%s tames=%d exotics=%d", channel, kind, otherKind(kind),
+        fmtLoc(here), fmtLoc(dest), metres(distance(here, dest)), tostring(moved), #tames, exotics)
+
+    local parts = { kind == "Anchor" and "Outbound transit complete." or "Inbound transit complete." }
+    if exotics > 0 then parts[#parts + 1] = string.format("%d Exotics consumed.", exotics) end
     if #tames == 1 then parts[#parts + 1] = "Your tame came with you." end
     if #tames > 1 then parts[#parts + 1] = string.format("%d tames came with you.", #tames) end
     tell(player, table.concat(parts, " "))
 end
 
 local function engage(gate, player)
-    local channel = channelOf(gate)
+    local kind, channel = identify(gate)
     local key = fullName(gate)
     if charging[key] then
         return tell(player, "Lattice already charging.")
     end
 
     local gates = allGates()
-    dbg("engage [%s]: %d gate(s) on prospect", channel, #gates)
+    dbg("engage %s [%s]: %d gate(s) on prospect", kind, channel, #gates)
 
-    local partner, why = resolvePartner(gate, channel, gates)
-    if not partner then return tell(player, why) end
+    local partnerEntry, why = resolvePartner(gate, kind, channel, gates)
+    if not partnerEntry then return tell(player, why) end
+    local partner = partnerEntry.actor
 
     local now = os.time()
     if lastTransit[key] and now - lastTransit[key] < CONFIG.CooldownSeconds then
@@ -381,15 +419,16 @@ local function engage(gate, player)
             CONFIG.CooldownSeconds - (now - lastTransit[key])))
     end
 
-    local notReady = checkReady(gate, player, partner)
+    local notReady = checkReady(gate, partner)
     if notReady then return tell(player, notReady) end
 
     if CONFIG.ChargeSeconds <= 0 then
-        return performTransit(gate, player, partner, channel)
+        return performTransit(gate, kind, channel, player, partner)
     end
 
     charging[key] = true
-    tell(player, string.format("Lattice charging on channel %s. Stay in the field for %d s.", channel, CONFIG.ChargeSeconds))
+    tell(player, string.format("Lattice charging: %s to %s on channel %s. Stay in the field for %d s.",
+        kind, otherKind(kind), channel, CONFIG.ChargeSeconds))
 
     ExecuteWithDelay(CONFIG.ChargeSeconds * 1000, function()
         ExecuteInGameThread(function()
@@ -402,9 +441,9 @@ local function engage(gate, player)
                 if distance(locationOf(player), locationOf(gate)) > CONFIG.FieldRadiusCm then
                     return tell(player, "Transit aborted: you left the field.")
                 end
-                local stillNotReady = checkReady(gate, player, partner)
+                local stillNotReady = checkReady(gate, partner)
                 if stillNotReady then return tell(player, "Transit aborted: " .. stillNotReady) end
-                performTransit(gate, player, partner, channel)
+                performTransit(gate, kind, channel, player, partner)
             end)
             if not ok then log("charge completion error: %s", tostring(err)) end
         end)
@@ -446,7 +485,7 @@ local function tryHook()
         hooked = true
         log("hooked %s", CONFIG.ButtonInteractHook)
         -- Gates that were already in the world (loaded with the save) get their look now.
-        for _, entry in ipairs(allGates()) do applyGateLook(entry.actor) end
+        for _, entry in ipairs(allGates()) do applyGateLook(entry.actor, entry.kind) end
     else
         dbg("hook not available yet (%s)", tostring(err))
     end
@@ -459,15 +498,15 @@ LoopAsync(5000, function()
     return hooked
 end)
 
--- Every new tripod actor: if it is one of our gates, log it and give it the gate look.
+-- Every new tripod actor: if it is one of our gates, log it and give it its look.
 pcall(NotifyOnNewObject, "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spotlight_Tripod.BP_Spotlight_Tripod_C",
     function(actor)
         ExecuteWithDelay(500, function()
             ExecuteInGameThread(function()
-                local channel = channelOf(actor)
-                if channel then
-                    log("gate [%s] spawned at %s (powered=%s)", channel, fmtLoc(locationOf(actor)), tostring(isPowered(actor)))
-                    applyGateLook(actor)
+                local kind, channel = identify(actor)
+                if kind then
+                    log("%s [%s] spawned at %s (powered=%s)", kind, channel, fmtLoc(locationOf(actor)), tostring(isPowered(actor)))
+                    applyGateLook(actor, kind)
                 end
             end)
         end)
@@ -478,10 +517,10 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
     local gates = allGates()
     Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s", #gates, tostring(hooked), tostring(DEV_MODE)))
     for i, entry in ipairs(gates) do
-        Ar:Log(string.format("  #%d [%s] %s powered=%s", i, entry.channel, fmtLoc(locationOf(entry.actor)), tostring(isPowered(entry.actor))))
+        Ar:Log(string.format("  #%d %s [%s] %s powered=%s", i, entry.kind, entry.channel,
+            fmtLoc(locationOf(entry.actor)), tostring(isPowered(entry.actor))))
     end
     return true
 end)
 
-log("loaded (row prefix %s, class %s, dev=%s, mesh=%s)", CONFIG.GateRowPrefix, CONFIG.GateClass,
-    tostring(DEV_MODE), tostring(CONFIG.GateMesh))
+log("loaded (class %s, dev=%s)", CONFIG.GateClass, tostring(DEV_MODE))

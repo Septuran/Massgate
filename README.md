@@ -65,11 +65,13 @@ data/installed/           tables from other installed mod paks (gitignored)
 `mod/ue4ss/Massgate/Scripts/config.lua` (rewritten in the game folder by `--install`):
 
 - `DevMode` — see above.
-- `GateMesh` — asset path of the mesh the gate wears instead of the spotlight tripod. Default
-  is the orbital-exchange landing pad. Set to `false` to keep the tripod. Keep it in sync with
-  `PreviewStaticMesh` in `patches.json` so the placement preview matches.
+- `Meshes` — optional table `{ Anchor = path, Resonator = path }` overriding the meshes the two
+  gate kinds wear instead of the spotlight tripod. Defaults are the orbital-exchange landing pad
+  and the survey laser uplink. Keep them in sync with `PreviewStaticMesh` in `patches.json` so
+  the placement preview matches.
 
-Channels are defined in `patches.json` under `channels`; each becomes its own item and recipe.
+Channels are defined in `patches.json` under `channels`; each becomes an Anchor item and a
+Resonator item with their own recipes. Add a name to the list and rebuild to add a channel.
 
 ## Testing notes
 

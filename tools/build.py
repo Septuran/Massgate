@@ -46,7 +46,7 @@ GAME_MODS = GAME / "Content" / "Paks" / "mods"
 UE4SS_MODS = GAME / "Binaries" / "Win64" / "ue4ss" / "Mods"
 
 RECIPE_TABLE = "Crafting/D_ProcessorRecipes.json"
-RECIPE_ROW = "Massgate_Gate"
+RECIPE_ROW = "Massgate_"  # prefix: every recipe we add
 
 # A bare {"RowName": ...} under field X normally points at table D_X (the ItemsStatic
 # trait convention). These fields break that convention.
