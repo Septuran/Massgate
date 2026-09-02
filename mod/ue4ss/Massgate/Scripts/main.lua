@@ -697,4 +697,6 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
     return true
 end)
 
-log("loaded (class %s, dev=%s, channels=%s)", CONFIG.GateClass, tostring(DEV_MODE), table.concat(CONFIG.Channels, ","))
+local VERSION = (okCfg and type(userConfig) == "table" and userConfig.Version) or "repo"
+log("Massgate v%s loaded (class %s, dev=%s, channels=%s)", tostring(VERSION), CONFIG.GateClass,
+    tostring(DEV_MODE), table.concat(CONFIG.Channels, ","))

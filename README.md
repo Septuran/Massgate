@@ -6,8 +6,10 @@ See [docs/design.md](docs/design.md) for the rules and lore.
 
 Two parts ship together and both are required:
 
-- `Massgate_P.pak` — data tables (item, recipe, tech tree, power draw). Goes in
-  `Icarus\Content\Paks\mods`.
+- `Massgate_v<version>_P.pak` — data tables (items, recipes, tech tree, power draw, map icons).
+  Goes in `Icarus\Content\Paks\mods`. The version in the name is `VERSION` + the git commit
+  count, with `-dev` for dev builds and `+` if built from uncommitted changes; the game's
+  "Mods Detected" dialog shows it at every launch, and the Lua logs the same string.
 - `Massgate` UE4SS Lua mod — the gate behaviour. Goes in
   `Icarus\Binaries\Win64\ue4ss\Mods` (UE4SS 3.0.1 layout).
 

@@ -39,7 +39,26 @@ PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
-PAK_NAME = "Massgate_P.pak"
+VERSION_FILE = REPO / "VERSION"
+
+
+def git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def build_version(dev: bool) -> str:
+    """e.g. 0.5.17-dev  (VERSION file . commit count, -dev for dev builds, + if uncommitted changes)."""
+    base = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "0.0"
+    count = git("rev-list", "--count", "HEAD") or "0"
+    dirty = "+" if git("status", "--porcelain") else ""
+    return f"{base}.{count}{dirty}{'-dev' if dev else ''}"
+
+
+def pak_name(version: str) -> str:
+    return f"Massgate_v{version}_P.pak"
 
 GAME = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus")
 GAME_MODS = GAME / "Content" / "Paks" / "mods"
@@ -212,29 +231,32 @@ def validate(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, d
     print(f"   validated {len(introduced)} rows, all references resolve")
 
 
-def pack(repak: Path) -> Path:
-    out = BUILD / PAK_NAME
-    if out.exists():
-        out.unlink()
+def pack(repak: Path, version: str) -> Path:
+    for old in BUILD.glob("Massgate*_P.pak"):
+        old.unlink()
+    out = BUILD / pak_name(version)
     cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(PAK_ROOT), str(out)]
     subprocess.run(cmd, check=True)
     return out
 
 
-def install(pak: Path, dev: bool, channels: list[str]) -> None:
+def install(pak: Path, dev: bool, channels: list[str], version: str) -> None:
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
     try:
-        shutil.copy2(pak, GAME_MODS / PAK_NAME)
+        # Only one Massgate pak may be installed at a time; the name carries the version.
+        for old in GAME_MODS.glob("Massgate*_P.pak"):
+            old.unlink()
+        shutil.copy2(pak, GAME_MODS / pak.name)
     except PermissionError:
         sys.exit(
             "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
             "   Close the game, then run:  python tools/build.py --merge-installed"
             + (" --dev" if dev else "") + " --install"
         )
-    print(f"   pak      -> {GAME_MODS / PAK_NAME}")
+    print(f"   pak      -> {GAME_MODS / pak.name}")
 
     target = UE4SS_MODS / LUA_MOD.name
     if target.exists():
@@ -245,12 +267,13 @@ def install(pak: Path, dev: bool, channels: list[str]) -> None:
     config.write_text(
         "-- Written by tools/build.py at install time. Edit the repo copy, not this file.\n"
         "return {\n"
+        f"    Version = \"{version}\",\n"
         f"    DevMode = {'true' if dev else 'false'},\n"
         f"    Channels = {{ {lua_channels} }},\n"
         "}\n",
         encoding="utf-8",
     )
-    print(f"   lua mod  -> {target}  (DevMode = {'true' if dev else 'false'}, channels = {channels})")
+    print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
 
 
 def main() -> int:
@@ -284,12 +307,13 @@ def main() -> int:
         rel, table = tables[key]
         write_json(PAK_ROOT / "Icarus" / "Content" / "Data" / rel, table)
         print(f"   {key}")
-    print("6. packing")
-    out = pack(args.repak)
+    version = build_version(args.dev)
+    print(f"6. packing version {version}")
+    out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
     if args.install:
         print("7. installing")
-        install(out, args.dev, patches.get("channels", []))
+        install(out, args.dev, patches.get("channels", []), version)
     return 0
 
 
