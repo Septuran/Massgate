@@ -34,7 +34,19 @@ Two parts ship together and both are required:
    `--merge-installed` layers the tables from other mod paks you have installed (unpacked
    into `data/installed/<pakname>/`) under ours, so our full-table replacement does not
    undo them. `--install` copies the pak into the game's mods folder.
-3. Copy `mod\ue4ss\Massgate` into `Icarus\Binaries\Win64\ue4ss\Mods\`.
+   `--install` also copies the Lua mod into `Icarus\Binaries\Win64\ue4ss\Mods\Massgate`
+   and writes its `config.lua` for the chosen mode.
+
+### Dev mode (testing on an early-game character)
+
+```
+python tools\build.py --merge-installed --dev --install
+```
+
+`--dev` makes the recipe free (1 Fiber), removes the blueprint requirement and lets you
+craft it from your inventory, and sets `DevMode = true` in the installed `config.lua`, which
+turns off the power, Exotics and cooldown checks and shrinks the interference radius to
+10 m. Rebuild without `--dev` to get the real rules back. Never ship a dev build.
 
 ## Layout
 

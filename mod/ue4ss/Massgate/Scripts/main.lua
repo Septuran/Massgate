@@ -30,6 +30,20 @@ local function log(fmt, ...)
     print(string.format("[Massgate] " .. fmt .. "\n", ...))
 end
 
+-- Development switch (config.lua next to this file). Everything that makes the gate
+-- expensive is turned off so it can be tested on an early-game character.
+local okCfg, userConfig = pcall(require, "config")
+local DEV_MODE = okCfg and type(userConfig) == "table" and userConfig.DevMode == true
+if DEV_MODE then
+    CONFIG.RequirePower         = false
+    CONFIG.ExoticsPerTrip       = 0
+    CONFIG.CooldownSeconds      = 0
+    CONFIG.InterferenceRadiusCm = 1000 -- 10 m, enough to test the refusal at a base
+    log("DEV MODE: no power, no exotics, no cooldown, 10 m interference radius")
+elseif not okCfg then
+    log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
+end
+
 local function dbg(fmt, ...)
     if CONFIG.Debug then log(fmt, ...) end
 end
@@ -164,7 +178,11 @@ local function engage(gate, player)
     lastTransit[key] = now
     lastTransit[partner:GetFullName()] = now
     log("transit %s -> %s (%.0f m) moved=%s", fmtLoc(here), fmtLoc(dest), separation / 100, tostring(moved))
-    tell(player, string.format("Transit complete. %d Exotics consumed.", CONFIG.ExoticsPerTrip))
+    if CONFIG.ExoticsPerTrip > 0 then
+        tell(player, string.format("Transit complete. %d Exotics consumed.", CONFIG.ExoticsPerTrip))
+    else
+        tell(player, "Transit complete.")
+    end
 end
 
 ------------------------------------------------------------------------------------------
@@ -234,4 +252,4 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
     return true
 end)
 
-log("loaded (gate row %s, class %s)", CONFIG.GateRow, CONFIG.GateClass)
+log("loaded (gate row %s, class %s, dev=%s)", CONFIG.GateRow, CONFIG.GateClass, tostring(DEV_MODE))

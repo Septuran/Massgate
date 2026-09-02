@@ -1,4 +1,4 @@
-"""Build the Massgate data-table pak.
+"""Build (and optionally install) the Massgate mod.
 
 Usage:
     python tools/build.py                 # base = pristine game tables (data/original)
@@ -6,15 +6,22 @@ Usage:
                                           # base = tables as replaced by the other mod paks
                                           #   currently installed (data/installed/*), layered in
                                           #   alphabetical pak order, so our pak does not undo them
-    python tools/build.py --install       # also copy the pak into the game's Paks/mods folder
+    python tools/build.py --dev           # DEV MODE: recipe needs no blueprint, costs 1 Fiber and
+                                          #   is craftable from the inventory; the installed Lua
+                                          #   config gets DevMode = true (no power / exotics /
+                                          #   cooldown, 10 m interference). Never ship a dev build.
+    python tools/build.py --install       # also copy the pak into the game's Paks/mods folder and
+                                          #   the Lua mod into the UE4SS Mods folder
     python tools/build.py --repak PATH    # explicit path to repak.exe (else tools/bin/repak.exe)
 
 Steps:
   1. load base tables (original, optionally overlaid with installed mod versions)
   2. apply mod/data/patches.json  (rows to add / replace, per table)
-  3. validate every row reference we introduce points at an existing row
-  4. write the full tables to build/pak/Icarus/Content/Data/...
-  5. pack build/pak into build/Massgate_P.pak with repak (V11, zlib)
+  3. (--dev) rewrite our recipe so it is free and unlocked
+  4. validate every row reference we introduce points at an existing row
+  5. write the full tables to build/pak/Icarus/Content/Data/...
+  6. pack build/pak into build/Massgate_P.pak with repak (V11, zlib)
+  7. (--install) copy pak + Lua mod into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
 
@@ -29,10 +36,17 @@ REPO = Path(__file__).resolve().parents[1]
 ORIGINAL = REPO / "data" / "original"
 INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
+LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
 PAK_NAME = "Massgate_P.pak"
-GAME_MODS = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus\Content\Paks\mods")
+
+GAME = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus")
+GAME_MODS = GAME / "Content" / "Paks" / "mods"
+UE4SS_MODS = GAME / "Binaries" / "Win64" / "ue4ss" / "Mods"
+
+RECIPE_TABLE = "Crafting/D_ProcessorRecipes.json"
+RECIPE_ROW = "Massgate_Gate"
 
 # A bare {"RowName": ...} under field X normally points at table D_X (the ItemsStatic
 # trait convention). These fields break that convention.
@@ -63,11 +77,6 @@ def write_json(path: Path, data: dict) -> None:
     text = json.dumps(data, indent=4, ensure_ascii=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.replace("\n", "\r\n") + "\r\n", encoding="utf-8")
-
-
-def find_table(base_dir: Path, table_name: str) -> Path | None:
-    hits = list(base_dir.rglob(f"{table_name}.json"))
-    return hits[0] if hits else None
 
 
 def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
@@ -117,6 +126,24 @@ def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[t
     return introduced
 
 
+def apply_dev_mode(introduced: list[tuple[str, dict]]) -> None:
+    """Make the gate free: no blueprint, 1 Fiber, craftable from the inventory."""
+    for key, row in introduced:
+        if key == RECIPE_TABLE and row["Name"] == RECIPE_ROW:
+            row.pop("Requirement", None)
+            row["RequiredMillijoules"] = 1000
+            row["RecipeSets"] = [
+                {"RowName": "Character", "DataTableName": "D_RecipeSets"},
+                {"RowName": "Fabricator", "DataTableName": "D_RecipeSets"},
+            ]
+            row["Inputs"] = [
+                {"Element": {"RowName": "Fiber", "DataTableName": "D_ItemsStatic"}, "Count": 1}
+            ]
+            print("   DEV: recipe is free, unlocked and craftable from the inventory")
+            return
+    sys.exit("!! dev mode: recipe row not found among introduced rows")
+
+
 def collect_refs(node, table_stem: str, field_hint: str | None = None):
     """Yield (table_name, row_name) for every row handle in a row."""
     if isinstance(node, dict):
@@ -164,9 +191,31 @@ def pack(repak: Path) -> Path:
     return out
 
 
+def install(pak: Path, dev: bool) -> None:
+    if not GAME_MODS.exists():
+        sys.exit(f"!! game mods folder not found: {GAME_MODS}")
+    if not UE4SS_MODS.exists():
+        sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
+    shutil.copy2(pak, GAME_MODS / PAK_NAME)
+    print(f"   pak      -> {GAME_MODS / PAK_NAME}")
+
+    target = UE4SS_MODS / LUA_MOD.name
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(LUA_MOD, target)
+    config = target / "Scripts" / "config.lua"
+    config.write_text(
+        "-- Written by tools/build.py at install time. Edit the repo copy, not this file.\n"
+        f"return {{ DevMode = {'true' if dev else 'false'} }}\n",
+        encoding="utf-8",
+    )
+    print(f"   lua mod  -> {target}  (DevMode = {'true' if dev else 'false'})")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--merge-installed", action="store_true")
+    ap.add_argument("--dev", action="store_true")
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
     args = ap.parse_args()
@@ -179,26 +228,26 @@ def main() -> int:
     print("1. loading base tables")
     tables = load_base_tables(args.merge_installed)
     print("2. applying patches")
-    patches = read_json(PATCHES)
-    introduced = apply_patches(tables, patches)
+    introduced = apply_patches(tables, read_json(PATCHES))
     touched = sorted({key for key, _ in introduced})
-    print("3. validating references")
+    if args.dev:
+        print("3. DEV MODE")
+        apply_dev_mode(introduced)
+    print("4. validating references")
     validate(tables, introduced)
-    print("4. writing tables")
+    print("5. writing tables")
     if PAK_ROOT.exists():
         shutil.rmtree(PAK_ROOT)
     for key in touched:
         rel, table = tables[key]
         write_json(PAK_ROOT / "Icarus" / "Content" / "Data" / rel, table)
         print(f"   {key}")
-    print("5. packing")
+    print("6. packing")
     out = pack(args.repak)
-    print(f"   -> {out} ({out.stat().st_size:,} bytes)")
+    print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
     if args.install:
-        if not GAME_MODS.exists():
-            sys.exit(f"!! game mods folder not found: {GAME_MODS}")
-        shutil.copy2(out, GAME_MODS / PAK_NAME)
-        print(f"   installed -> {GAME_MODS / PAK_NAME}")
+        print("7. installing")
+        install(out, args.dev)
     return 0
 
 
