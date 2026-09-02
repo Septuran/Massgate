@@ -28,7 +28,7 @@ is why every trip has a price and why the UDA never shipped it to the colonists.
 | Charge-up | 3 s after engaging; you must stay within 8 m of the gate | Gives the transit weight and a window to abort |
 | Trip cost | 5 Exotics per transit (not yet deducted) | Ongoing cost so it never becomes free travel |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
-| Tames | Your dismounted mounts and pets within 8 m travel with you | F dismounts, so you engage on foot; the field carries what stands in it |
+| Tames | Your mounts and pets set to Follow within 8 m travel with you | F dismounts, so you engage on foot; only followers travel, so a farm stays put |
 | Placement | Must be outside | Fits the interference lore and keeps gates visible |
 
 Dev mode (see README) removes power, exotics and cooldown, shrinks interference to 10 m and

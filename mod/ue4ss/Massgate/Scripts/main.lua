@@ -29,7 +29,9 @@ local CONFIG = {
     FieldRadiusCm        = 800,     -- the field: player must stay inside while charging, and
                                     -- tames inside it travel along
     BringTames           = true,    -- your dismounted mounts/pets in the field come with you
+    FollowingTamesOnly   = true,    -- ... but only those set to Follow, so a farm never travels
     MountClass           = "BP_Mount_Base_C",
+    FollowState          = 1,       -- EMountMovementBehaviourState::Follow
     TameSpacingCm        = 250,     -- lateral spacing for arriving tames
     ArrivalOffsetCm      = 150,     -- step out in front of the destination gate
     ArrivalLiftCm        = 100,     -- capsule half-height-ish lift above the traced ground
@@ -265,9 +267,13 @@ local function tamesInField(gate, player)
     local here = locationOf(gate)
     for _, tame in ipairs(mounts) do
         if valid(tame) and distance(here, locationOf(tame)) <= CONFIG.FieldRadiusCm and ownsTame(player, tame) then
-            local ridden = false
+            local ridden, following = false, true
             pcall(function() ridden = tame:IsBeingRidden() == true end)
-            if not ridden then found[#found + 1] = tame end
+            if CONFIG.FollowingTamesOnly then
+                local ok2, state = pcall(function() return tame.MovementBehaviourState end)
+                following = ok2 and tonumber(state) == CONFIG.FollowState
+            end
+            if not ridden and following then found[#found + 1] = tame end
         end
     end
     return found
