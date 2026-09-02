@@ -212,6 +212,31 @@
             ]
         },
         {
+            "table": "UI/D_MapIcons.json",
+            "_comment": "Map + compass icons. The Lua attaches a map-icon component to each gate pointing at the row for its kind.",
+            "add": [
+                {
+                    "Name": "Massgate_Anchor",
+                    "WidgetClass": "/Game/BP/Objects/World/Items/Deployables/Radar/UMG_RadarIcon.UMG_RadarIcon_C",
+                    "MapIcon": "Texture2D'/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Home.Icon_Map_Home'",
+                    "ZOrder": 40,
+                    "ScaleFactor": 1.1,
+                    "bShowNameOnHover": true,
+                    "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Anchor-HoverName\", \"Massgate Anchor\")",
+                    "bDisplayOnCompass": true
+                },
+                {
+                    "Name": "Massgate_Resonator",
+                    "WidgetClass": "/Game/BP/Objects/World/Items/Deployables/Radar/UMG_RadarIcon.UMG_RadarIcon_C",
+                    "MapIcon": "Texture2D'/Game/Assets/2DArt/UI/Icons/MapIcons/Icon_Map_Waypoint.Icon_Map_Waypoint'",
+                    "ZOrder": 40,
+                    "bShowNameOnHover": true,
+                    "HoverName": "NSLOCTEXT(\"D_MapIcons\", \"Massgate_Resonator-HoverName\", \"Massgate Resonator\")",
+                    "bDisplayOnCompass": true
+                }
+            ]
+        },
+        {
             "table": "Traits/D_Interactable.json",
             "add": [
                 {

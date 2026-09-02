@@ -50,7 +50,19 @@ local CONFIG = {
         Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
     },
     PlaceholderMeshMatch = "Tripod_Light",
+    -- Map + compass icon: a game map-icon component is attached to each gate, pointing at
+    -- the D_MapIcons row "Massgate_<Kind>" our pak adds. Set false to disable.
+    MapIcons             = true,
+    MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
+    MapIconsLibrary      = "/Script/Icarus.Default__MapIconsLibrary",
+    MapIconsTable        = "/Engine/Transient.D_MapIcons",
     Debug                = true,
+}
+
+local IDENTITY_TRANSFORM = {
+    Rotation    = { X = 0, Y = 0, Z = 0, W = 1 },
+    Translation = { X = 0, Y = 0, Z = 0 },
+    Scale3D     = { X = 1, Y = 1, Z = 1 },
 }
 
 local function log(fmt, ...)
@@ -154,15 +166,32 @@ local function isPowered(gate)
 end
 
 ------------------------------------------------------------------------------------------
--- Player feedback: the game's chat box accepts local system messages
+-- Multiplayer: gameplay runs only where the game has authority (solo, the host of a
+-- hosted game, or a dedicated server running UE4SS). Looks and map icons are local and
+-- run everywhere the Lua is installed.
+------------------------------------------------------------------------------------------
+
+local function hasAuthority(actor)
+    local ok, auth = pcall(function() return actor:HasAuthority() end)
+    return ok and auth == true
+end
+
+------------------------------------------------------------------------------------------
+-- Player feedback: the game's chat box. Local players get a local message; remote players
+-- (we are the server) get it through the client RPC.
 ------------------------------------------------------------------------------------------
 
 local function tell(player, text)
     log("-> %s", text)
     pcall(function()
         local controller = player:GetController()
-        if valid(controller) then
+        if not valid(controller) then return end
+        local isLocal = true
+        pcall(function() isLocal = controller:IsLocalController() == true end)
+        if isLocal then
             controller:AddLocalMessage("[Massgate] " .. text)
+        else
+            controller:ClientReceiveServerMessage("[Massgate] " .. text)
         end
     end)
 end
@@ -207,6 +236,53 @@ local function applyGateLook(actor, kind)
         dbg("%s look applied to %s (%d component(s) swapped)", kind, fullName(actor), swapped)
     end)
     if not ok then log("applyGateLook failed: %s", tostring(err)) end
+end
+
+------------------------------------------------------------------------------------------
+-- Map icon: attach the game's own map-icon component pointing at our D_MapIcons row
+------------------------------------------------------------------------------------------
+
+local function hasMapIcon(actor, compClass)
+    local ok, found = pcall(function()
+        local comps = actor:K2_GetComponentsByClass(compClass)
+        return #comps > 0
+    end)
+    return ok and found
+end
+
+local function addMapIcon(actor, kind)
+    if not CONFIG.MapIcons then return end
+    local ok, err = pcall(function()
+        local compClass = StaticFindObject(CONFIG.MapIconComponentClass)
+        if not valid(compClass) then return log("map icon component class not found") end
+        if hasMapIcon(actor, compClass) then return end
+
+        local comp = actor:AddComponentByClass(compClass, true, IDENTITY_TRANSFORM, true) -- deferred
+        if not valid(comp) then return log("AddComponentByClass returned nothing") end
+
+        local rowName = "Massgate_" .. kind
+        local setOk = pcall(function()
+            local lib = StaticFindObject(CONFIG.MapIconsLibrary)
+            comp.MapIconData = lib:MakeMapIcons(FName(rowName))
+        end)
+        if not setOk then
+            -- Fall back to writing the handle's fields directly.
+            comp.MapIconData.RowName = FName(rowName)
+            local table = StaticFindObject(CONFIG.MapIconsTable)
+            if valid(table) then comp.MapIconData.DataTable = table end
+        end
+        pcall(function() comp.bSetupIconAutomatically = true end)
+
+        actor:FinishAddComponent(comp, true, IDENTITY_TRANSFORM)
+        pcall(function() comp:TrySetupMapIcon() end)
+        dbg("map icon %s attached to %s (row set via %s)", rowName, fullName(actor), setOk and "library" or "fields")
+    end)
+    if not ok then log("addMapIcon failed: %s", tostring(err)) end
+end
+
+local function decorate(actor, kind)
+    applyGateLook(actor, kind)
+    addMapIcon(actor, kind)
 end
 
 ------------------------------------------------------------------------------------------
@@ -299,7 +375,7 @@ end
 ------------------------------------------------------------------------------------------
 
 local lastTransit = {} -- gate full name -> os.time() of last use
-local charging    = {} -- gate full name -> true while a transit is charging
+local charging    = {} -- gate full name -> full name of the player it is charging for
 
 local function otherKind(kind)
     return kind == "Anchor" and "Resonator" or "Anchor"
@@ -403,7 +479,10 @@ local function engage(gate, player)
     local kind, channel = identify(gate)
     local key = fullName(gate)
     if charging[key] then
-        return tell(player, "Lattice already charging.")
+        if charging[key] == fullName(player) then
+            return tell(player, "Lattice already charging.")
+        end
+        return tell(player, "Lattice is charging for another prospector. Wait your turn.")
     end
 
     local gates = allGates()
@@ -426,7 +505,7 @@ local function engage(gate, player)
         return performTransit(gate, kind, channel, player, partner)
     end
 
-    charging[key] = true
+    charging[key] = fullName(player)
     tell(player, string.format("Lattice charging: %s to %s on channel %s. Stay in the field for %d s.",
         kind, otherKind(kind), channel, CONFIG.ChargeSeconds))
 
@@ -471,6 +550,9 @@ local function onButtonInteract(self, Instigator, HitResult)
         if not valid(component) then return end
         local owner = component:GetOwner()
         if not isGate(owner) then return end
+        if not hasAuthority(owner) then
+            return dbg("engage seen on a client; the server handles it")
+        end
 
         dbg("gate engaged by %s at %s", fullName(player), fmtLoc(locationOf(owner)))
         engage(owner, player)
@@ -484,8 +566,8 @@ local function tryHook()
     if ok then
         hooked = true
         log("hooked %s", CONFIG.ButtonInteractHook)
-        -- Gates that were already in the world (loaded with the save) get their look now.
-        for _, entry in ipairs(allGates()) do applyGateLook(entry.actor, entry.kind) end
+        -- Gates that were already in the world (loaded with the save) get their look and icon now.
+        for _, entry in ipairs(allGates()) do decorate(entry.actor, entry.kind) end
     else
         dbg("hook not available yet (%s)", tostring(err))
     end
@@ -506,7 +588,7 @@ pcall(NotifyOnNewObject, "/Game/BP/Objects/World/Items/Deployables/Lights/BP_Spo
                 local kind, channel = identify(actor)
                 if kind then
                     log("%s [%s] spawned at %s (powered=%s)", kind, channel, fmtLoc(locationOf(actor)), tostring(isPowered(actor)))
-                    applyGateLook(actor, kind)
+                    decorate(actor, kind)
                 end
             end)
         end)

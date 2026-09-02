@@ -76,7 +76,25 @@ Row map (`<CH>` = channel, `<K>` = Anchor or Resonator):
 | D_Interactions | Massgate_Activate | "Engage Massgate" prompt on the button-trigger behaviour |
 | D_ProcessorRecipes | Massgate_<K>_<CH> | Fabricator recipes |
 | D_Talents | Massgate_Gate | One tech-tree node at (4550, 700) unlocking every recipe |
+| D_MapIcons | Massgate_<K> | Map and compass icon per kind; the Lua attaches the game's map-icon component to each gate |
 | D_ItemsStatic etc. | Massgate_Gate | Legacy v0.1 item kept so old placed gates load; acts as Anchor Alpha |
+
+## Multiplayer
+
+The engage interaction is server-only in the game's own data, so the Lua's gameplay path
+runs where the game has authority: solo, the host of a hosted game, or a dedicated server that
+runs UE4SS (Windows only). The handler checks authority and does nothing on a pure client.
+Looks and map icons are local and run on every machine with the Lua installed.
+
+- Every player needs the pak, or the gate items do not exist for them.
+- Every player should have the Lua for the looks and icons; only the authority needs it for
+  gameplay.
+- Messages go to the local chat box for the local player and through the controller's client
+  RPC for remote players.
+- A gate charging for one player refuses a second player until the transit resolves.
+- Tame ownership is checked against the engaging player's state, so only their followers travel.
+
+Not yet tested with a second player.
 
 ## Roadmap
 
