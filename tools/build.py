@@ -378,7 +378,7 @@ Everyone in a multiplayer session needs both parts. Dedicated servers must run U
 
 Also in this zip, optional and independent: TameRegen. Copy the folder "TameRegen" next to
 "Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\ (that pak holds one text file; it is
-only there so the "Mods Detected" dialog lists the mod). Tames set to Follow then heal 0.5 % of
+only there so the "Mods Detected" dialog lists the mod). Tames set to Follow then heal 0.25 % of
 their maximum health per second while out of combat, scaled by their Nurtured Recovery talent.
 Only the host / server needs it.
 

@@ -5,7 +5,7 @@
     Icarus heals tames by a flat "health regen per minute" stat (10-50 depending on the species),
     so a 2,200 HP mount takes hours to recover. This mod heals every tame that is set to Follow
     and has not been in combat for a few seconds by a percentage of its MAXIMUM health each
-    second (default 0.5 %/s = full health in about 3.5 minutes), on top of the game's own regen.
+    second (default 0.25 %/s = full health in about 7 minutes), on top of the game's own regen.
     The rate scales with the creature talent "Nurtured Recovery": rank 4 gives the full rate,
     lower ranks their share of the top rank's bonus (5/15/30/60 % -> 8/25/50/100 %), no talent
     gives nothing by default (NoTalentFraction).
@@ -29,7 +29,7 @@
 ]]
 
 local CONFIG = {
-    PercentPerSecond    = 0.5,     -- % of max health healed per second while eligible
+    PercentPerSecond    = 0.25,    -- % of max health healed per second while eligible (0.5 was too fast in play)
     TickMs              = 1000,
     RequireFollow       = true,    -- only tames whose movement behaviour is Follow
     FollowState         = 1,       -- EMountMovementBehaviourState::Follow

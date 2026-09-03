@@ -54,13 +54,13 @@ was verified on a dev build with real costs before they were switched off). Neve
 ## TameRegen (second mod in this repo)
 
 `mod/ue4ss/TameRegen/` is an independent UE4SS Lua mod, no pak needed: every tame set to
-**Follow** heals **0.5 % of its maximum health per second** while out of combat (no attack
+**Follow** heals **0.25 % of its maximum health per second** while out of combat (no attack
 target and no damage for 10 s), on top of the game's flat 10-50 HP/minute. A 2,200 HP mount
-is back to full in about 3.5 minutes instead of two hours. Mounts, pets and farm animals all
+is back to full in about 7 minutes instead of two hours. Mounts, pets and farm animals all
 count (everything derived from `BP_Mount_Base_C`). Only the host or server needs it.
 
 The rate scales with the creature talent **Nurtured Recovery** (the "+5/+15/+30/+60 % Health
-Regeneration" node in every companion tree): rank 4 gives the full 0.5 %/s, ranks 1-3 give
+Regeneration" node in every companion tree): rank 4 gives the full 0.25 %/s, ranks 1-3 give
 8 / 25 / 50 % of it, and a tame without the talent gets only the game's own regen
 (`NoTalentFraction`). The talent rows are read from D_Talents at build time; the rank comes
 from the mount's replicated talent list at run time.
