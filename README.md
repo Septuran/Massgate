@@ -65,9 +65,11 @@ Regeneration" node in every companion tree): rank 4 gives the full 0.5 %/s, rank
 (`NoTalentFraction`). The talent rows are read from D_Talents at build time; the rank comes
 from the mount's replicated talent list at run time.
 
-`--install` installs it next to Massgate; `--install --lua-only` refreshes just the Lua mods
-without rebuilding the pak, which also works while the game runs (UE4SS reloads Lua with
-Ctrl+R). Tunables (`PercentPerSecond`, `CombatGraceSeconds`, `RequireFollow`,
+`--install` installs it next to Massgate, plus a one-file marker pak
+`TameRegen_v<version>_P.pak` whose only purpose is to make the game's "Mods Detected" dialog
+list the mod with its version (that dialog only sees the Paks folder, never UE4SS mods).
+`--install --lua-only` refreshes just the Lua mods without touching either pak, which also
+works while the game runs (UE4SS reloads Lua with Ctrl+R). Tunables (`PercentPerSecond`, `CombatGraceSeconds`, `RequireFollow`,
 `HealWhileRidden`) are documented in `mod/ue4ss/TameRegen/Scripts/config.lua`. With the
 console: `tameregen` lists the known tames and why each is or is not healing,
 `tameregen rate 1` changes the rate for the session, `tameregen scan` picks up tames that

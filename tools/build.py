@@ -258,6 +258,33 @@ def pack(repak: Path, version: str) -> Path:
     return out
 
 
+MARKER_ROOT = BUILD / "marker"
+
+
+def marker_pak_name(version: str) -> str:
+    return f"TameRegen_v{version}_P.pak"
+
+
+def pack_marker(repak: Path, version: str) -> Path:
+    """A one-file pak for TameRegen so the game's "Mods Detected" dialog lists it with its
+    version. The Lua mod itself lives in the UE4SS Mods folder, which that dialog never sees.
+    The file inside sits under Content/Mods/, a path nothing in the game reads."""
+    if MARKER_ROOT.exists():
+        shutil.rmtree(MARKER_ROOT)
+    note = MARKER_ROOT / "Icarus" / "Content" / "Mods" / "TameRegen" / "TameRegen.txt"
+    note.parent.mkdir(parents=True)
+    note.write_text(
+        f"TameRegen {version}: marker pak only, so the Mods Detected dialog lists the mod.\n"
+        "The mod is the UE4SS Lua folder Icarus\\Binaries\\Win64\\ue4ss\\Mods\\TameRegen.\n",
+        encoding="utf-8",
+    )
+    for old in BUILD.glob("TameRegen*_P.pak"):
+        old.unlink()
+    out = BUILD / marker_pak_name(version)
+    subprocess.run([str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(MARKER_ROOT), str(out)], check=True)
+    return out
+
+
 def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str) -> None:
     lua_channels = ", ".join(f'"{c}"' for c in channels)
     (scripts_dir / "config.lua").write_text(
@@ -349,43 +376,51 @@ Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\W
 
 Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
 
-Also in this zip, optional and independent: the folder "TameRegen" (UE4SS Lua only, no pak).
-Copy it next to "Massgate" in ue4ss\\Mods\\ and tames set to Follow heal 0.5 % of their maximum
-health per second while out of combat. Only the host / server needs it.
+Also in this zip, optional and independent: TameRegen. Copy the folder "TameRegen" next to
+"Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\ (that pak holds one text file; it is
+only there so the "Mods Detected" dialog lists the mod). Tames set to Follow then heal 0.5 % of
+their maximum health per second while out of combat, scaled by their Nurtured Recovery talent.
+Only the host / server needs it.
 
 Source, docs and issues: https://github.com/Septuran/Massgate
 """
 
 
-def package(pak: Path, dev: bool, channels: list[str], version: str, classes: list[str], talents: dict[str, list[int]]) -> Path:
-    """Build the distributable zip: the pak, both Lua mod folders and a README."""
+def package(pak: Path, marker: Path, dev: bool, channels: list[str], version: str, classes: list[str],
+            talents: dict[str, list[int]]) -> Path:
+    """Build the distributable zip: both paks, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
     staging = release_dir / f"Massgate_v{version}"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     shutil.copy2(pak, staging / pak.name)
+    shutil.copy2(marker, staging / marker.name)
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
     shutil.copytree(REGEN_MOD, staging / REGEN_MOD.name)
     write_regen_config(staging / REGEN_MOD.name / "Scripts", version, classes, talents)
-    (staging / "README.txt").write_text(RELEASE_README.format(version=version, pak=pak.name), encoding="utf-8")
+    (staging / "README.txt").write_text(
+        RELEASE_README.format(version=version, pak=pak.name, marker=marker.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
     return Path(archive)
 
 
-def install(pak: Path | None, dev: bool, channels: list[str], version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
-    """Copy the pak (unless None: --lua-only) and both Lua mods into the game."""
+def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str], version: str,
+            classes: list[str], talents: dict[str, list[int]]) -> None:
+    """Copy the paks (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
-    if pak is not None:
+    for prefix, new in (("Massgate", pak), ("TameRegen", marker)):
+        if new is None:
+            continue
         try:
-            # Only one Massgate pak may be installed at a time; the name carries the version.
-            for old in GAME_MODS.glob("Massgate*_P.pak"):
+            # Only one pak per mod may be installed at a time; the name carries the version.
+            for old in GAME_MODS.glob(f"{prefix}*_P.pak"):
                 old.unlink()
-            shutil.copy2(pak, GAME_MODS / pak.name)
+            shutil.copy2(new, GAME_MODS / new.name)
         except PermissionError:
             sys.exit(
                 "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
@@ -393,7 +428,7 @@ def install(pak: Path | None, dev: bool, channels: list[str], version: str, clas
                 + (" --dev" if dev else "") + " --install\n"
                 "   (or --install --lua-only to refresh just the Lua mods while it runs)"
             )
-        print(f"   pak      -> {GAME_MODS / pak.name}")
+        print(f"   pak      -> {GAME_MODS / new.name}")
 
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
@@ -421,7 +456,7 @@ def main() -> int:
         patches = read_json(PATCHES)
         version = build_version(args.dev)
         print(f"installing Lua mods only, version {version}")
-        install(None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables))
+        install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables))
         return 0
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
@@ -456,13 +491,15 @@ def main() -> int:
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
+    marker = pack_marker(args.repak, version)
+    print(f"   -> {marker} ({marker.stat().st_size:,} bytes)  [TameRegen marker: one text file]")
     classes, talents = mount_classes(tables), regen_talents(tables)
     if args.install:
         print("7. installing")
-        install(out, args.dev, patches.get("channels", []), version, classes, talents)
+        install(out, marker, args.dev, patches.get("channels", []), version, classes, talents)
     if args.package:
         print("8. packaging")
-        archive = package(out, args.dev, patches.get("channels", []), version, classes, talents)
+        archive = package(out, marker, args.dev, patches.get("channels", []), version, classes, talents)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 
