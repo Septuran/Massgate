@@ -281,8 +281,33 @@ def mount_classes(tables: dict[str, tuple[Path, dict]]) -> list[str]:
     })
 
 
-def write_regen_config(scripts_dir: Path, version: str, classes: list[str]) -> None:
+TALENTS_TABLE = "Talents/D_Talents.json"
+REGEN_STAT_KEY = '(Value="BaseHealthRegen_+%")'
+
+
+def regen_talents(tables: dict[str, tuple[Path, dict]]) -> dict[str, list[int]]:
+    """The creature talent 'Nurtured Recovery' (one row per species, e.g.
+    Creature_Base_HealthRegeneration_Buffalo): row name -> the health-regen bonus of each rank.
+    TameRegen scales its heal by the unlocked rank's share of the top rank."""
+    _, table = tables[TALENTS_TABLE]
+    found: dict[str, list[int]] = {}
+    for row in table.get("Rows", []):
+        if not str(row.get("TalentTree", {}).get("RowName", "")).startswith("Creature_"):
+            continue
+        rewards = row.get("Rewards") or []
+        stats = [r.get("GrantedStats", {}) for r in rewards]
+        if rewards and all(list(s.keys()) == [REGEN_STAT_KEY] for s in stats):
+            found[row["Name"]] = [int(s[REGEN_STAT_KEY]) for s in stats]
+    if not found:
+        sys.exit("!! no creature health-regen talents found in D_Talents; the table format changed?")
+    return found
+
+
+def write_regen_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
     lua_classes = "".join(f'        "{c}",\n' for c in classes)
+    lua_talents = "".join(
+        f'        ["{name}"] = {{ {", ".join(str(v) for v in ranks)} }},\n' for name, ranks in sorted(talents.items())
+    )
     (scripts_dir / "config.lua").write_text(
         "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
         "-- Tunables (PercentPerSecond, CombatGraceSeconds, ...) are documented in the repo's config.lua.\n"
@@ -290,6 +315,10 @@ def write_regen_config(scripts_dir: Path, version: str, classes: list[str]) -> N
         f"    Version = \"{version}\",\n"
         "    MountClasses = {\n"
         f"{lua_classes}"
+        "    },\n"
+        "    -- Nurtured Recovery rows from D_Talents: per-rank regen bonus, used to scale the heal\n"
+        "    RegenTalents = {\n"
+        f"{lua_talents}"
         "    },\n"
         "}\n",
         encoding="utf-8",
@@ -328,7 +357,7 @@ Source, docs and issues: https://github.com/Septuran/Massgate
 """
 
 
-def package(pak: Path, dev: bool, channels: list[str], version: str, classes: list[str]) -> Path:
+def package(pak: Path, dev: bool, channels: list[str], version: str, classes: list[str], talents: dict[str, list[int]]) -> Path:
     """Build the distributable zip: the pak, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
     staging = release_dir / f"Massgate_v{version}"
@@ -339,13 +368,13 @@ def package(pak: Path, dev: bool, channels: list[str], version: str, classes: li
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
     shutil.copytree(REGEN_MOD, staging / REGEN_MOD.name)
-    write_regen_config(staging / REGEN_MOD.name / "Scripts", version, classes)
+    write_regen_config(staging / REGEN_MOD.name / "Scripts", version, classes, talents)
     (staging / "README.txt").write_text(RELEASE_README.format(version=version, pak=pak.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
     return Path(archive)
 
 
-def install(pak: Path | None, dev: bool, channels: list[str], version: str, classes: list[str]) -> None:
+def install(pak: Path | None, dev: bool, channels: list[str], version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
     """Copy the pak (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
@@ -368,8 +397,8 @@ def install(pak: Path | None, dev: bool, channels: list[str], version: str, clas
 
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
-    target = install_lua_mod(REGEN_MOD, lambda scripts: write_regen_config(scripts, version, classes))
-    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes)")
+    target = install_lua_mod(REGEN_MOD, lambda scripts: write_regen_config(scripts, version, classes, talents))
+    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents)")
 
 
 def main() -> int:
@@ -392,7 +421,7 @@ def main() -> int:
         patches = read_json(PATCHES)
         version = build_version(args.dev)
         print(f"installing Lua mods only, version {version}")
-        install(None, args.dev, patches.get("channels", []), version, mount_classes(tables))
+        install(None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables))
         return 0
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
@@ -427,13 +456,13 @@ def main() -> int:
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
-    classes = mount_classes(tables)
+    classes, talents = mount_classes(tables), regen_talents(tables)
     if args.install:
         print("7. installing")
-        install(out, args.dev, patches.get("channels", []), version, classes)
+        install(out, args.dev, patches.get("channels", []), version, classes, talents)
     if args.package:
         print("8. packaging")
-        archive = package(out, args.dev, patches.get("channels", []), version, classes)
+        archive = package(out, args.dev, patches.get("channels", []), version, classes, talents)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 

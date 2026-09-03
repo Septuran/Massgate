@@ -5,6 +5,9 @@
 --   CombatGraceSeconds seconds without damage or a target before healing resumes (default 10)
 --   RequireFollow      false heals tames in every movement mode (default true)
 --   HealWhileRidden    false pauses healing while someone rides the mount (default true)
+--   TalentScaling      "reward" = rank's Nurtured Recovery bonus / top rank's bonus (8/25/50/100 %),
+--                      "rank" = rank / 4 (default "reward"); rank 4 is always the full rate
+--   NoTalentFraction   share of the rate for a tame without the talent (default 0 = game regen only)
 --   Debug              log registrations and heal start/stop to UE4SS.log (default true)
 return {
     Version = "dev",

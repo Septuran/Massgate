@@ -59,6 +59,12 @@ target and no damage for 10 s), on top of the game's flat 10-50 HP/minute. A 2,2
 is back to full in about 3.5 minutes instead of two hours. Mounts, pets and farm animals all
 count (everything derived from `BP_Mount_Base_C`). Only the host or server needs it.
 
+The rate scales with the creature talent **Nurtured Recovery** (the "+5/+15/+30/+60 % Health
+Regeneration" node in every companion tree): rank 4 gives the full 0.5 %/s, ranks 1-3 give
+8 / 25 / 50 % of it, and a tame without the talent gets only the game's own regen
+(`NoTalentFraction`). The talent rows are read from D_Talents at build time; the rank comes
+from the mount's replicated talent list at run time.
+
 `--install` installs it next to Massgate; `--install --lua-only` refreshes just the Lua mods
 without rebuilding the pak, which also works while the game runs (UE4SS reloads Lua with
 Ctrl+R). Tunables (`PercentPerSecond`, `CombatGraceSeconds`, `RequireFollow`,

@@ -6,6 +6,9 @@
     so a 2,200 HP mount takes hours to recover. This mod heals every tame that is set to Follow
     and has not been in combat for a few seconds by a percentage of its MAXIMUM health each
     second (default 0.5 %/s = full health in about 3.5 minutes), on top of the game's own regen.
+    The rate scales with the creature talent "Nurtured Recovery": rank 4 gives the full rate,
+    lower ranks their share of the top rank's bonus (5/15/30/60 % -> 8/25/50/100 %), no talent
+    gives nothing by default (NoTalentFraction).
 
     How it works:
       * Tames are collected from the game's spawn notifications for BP_Mount_Base_C (every mount
@@ -32,6 +35,14 @@ local CONFIG = {
     FollowState         = 1,       -- EMountMovementBehaviourState::Follow
     CombatGraceSeconds  = 10,      -- no healing this long after taking damage or having a target
     HealWhileRidden     = true,    -- a ridden mount on Follow still heals when out of combat
+    -- The heal scales with the creature talent "Nurtured Recovery" (one D_Talents row per species,
+    -- 4 ranks, e.g. +5/+15/+30/+60 % regen). RegenTalents = { rowName = { bonus per rank } } is
+    -- written by build.py. "reward": factor = this rank's bonus / top rank's bonus (8/25/50/100 %);
+    -- "rank": factor = rank / 4. Top rank always gives the full PercentPerSecond.
+    RegenTalents        = {},
+    TalentScaling       = "reward",
+    NoTalentFraction    = 0,       -- share of PercentPerSecond for a tame without the talent
+    TalentRefreshTicks  = 10,      -- re-read the tame's talent list this often (ranks change rarely)
     BaseClass           = "/Game/BP/Mounts/BP_Mount_Base.BP_Mount_Base_C",
     MountClasses        = {},      -- concrete classes, written by build.py (belt and braces: the
                                    -- base-class notification already covers subclasses)
@@ -114,8 +125,51 @@ local function recentDamage(state, seconds)
     return ok and tonumber(dmg) or 0
 end
 
+-- UE4SS hands back RemoteUnrealParam wrappers for array elements; the value is behind :get().
+local function unwrap(v)
+    if type(v) == "userdata" then
+        local ok, inner = pcall(function() return v:get() end)
+        if ok and inner ~= nil then return inner end
+    end
+    return v
+end
+
+-- Nurtured Recovery rank from the mount's replicated talent list (UMountCharacterState.Talents,
+-- FBackendTalent = { RowName, Rank }). Returns rank (0 = not unlocked) and the talent row name.
+local function talentRank(state)
+    local rank, row = 0, nil
+    local ok, err = pcall(function()
+        local talents = state.Talents
+        if talents == nil then return end
+        talents:ForEach(function(_, elem)
+            local t = unwrap(elem)
+            local okN, name = pcall(function() return t.RowName:ToString() end)
+            if okN and CONFIG.RegenTalents[name] then
+                local okR, r = pcall(function() return tonumber(t.Rank) end)
+                if okR and r and r > rank then rank, row = r, name end
+            end
+        end)
+    end)
+    if not ok then dbg("talent read failed: %s", tostring(err)) end
+    return rank, row
+end
+
+-- Share of PercentPerSecond this tame earns from its talent rank.
+local function talentFactor(rank, row)
+    if rank <= 0 or not row then return CONFIG.NoTalentFraction end
+    local rewards = CONFIG.RegenTalents[row]
+    if CONFIG.TalentScaling == "rank" or not rewards or #rewards == 0 then
+        return math.min(rank, 4) / 4
+    end
+    local top = rewards[#rewards]
+    local mine = rewards[math.min(rank, #rewards)]
+    if not top or top <= 0 then return 1 end
+    return math.min(mine / top, 1)
+end
+
 ------------------------------------------------------------------------------------------
--- Registry: full name -> { actor, carry (fractional HP owed), lastHealth, damagedAt, healing }
+-- Registry: full name -> { actor, carry (fractional HP owed), lastHealth, damagedAt, healing,
+--                          rank, row, factor, talentAt (tick of the last talent read) }
 ------------------------------------------------------------------------------------------
 
 local registry = {}
@@ -125,8 +179,21 @@ local function register(actor, source)
     if not valid(actor) then return end
     local key = fullName(actor)
     if registry[key] or key:find("Default__", 1, true) then return end -- skip class default objects
-    registry[key] = { actor = actor, carry = 0, lastHealth = nil, damagedAt = -1e9, healing = false }
+    registry[key] = { actor = actor, carry = 0, lastHealth = nil, damagedAt = -1e9, healing = false,
+                      rank = 0, row = nil, factor = CONFIG.NoTalentFraction, talentAt = nil }
     dbg("registered %s (%s) via %s", displayName(actor), shortName(actor), source)
+end
+
+local function refreshTalent(entry, tame, state)
+    if entry.talentAt and tick - entry.talentAt < CONFIG.TalentRefreshTicks then return end
+    entry.talentAt = tick
+    local rank, row = talentRank(state)
+    local factor = talentFactor(rank, row)
+    if rank ~= entry.rank or factor ~= entry.factor then
+        dbg("%s: Nurtured Recovery rank %d (%s) -> %.0f%% of the heal rate", displayName(tame), rank,
+            tostring(row), factor * 100)
+    end
+    entry.rank, entry.row, entry.factor = rank, row, factor
 end
 
 local function count()
@@ -160,6 +227,8 @@ local function eligible(entry, tame, state)
         entry.damagedAt = tick
         return false, "recent damage"
     end
+    refreshTalent(entry, tame, state)
+    if entry.factor <= 0 then return false, "no Nurtured Recovery talent" end
     return true, "eligible"
 end
 
@@ -177,7 +246,7 @@ local function healTick()
                 if entry.lastHealth and health < entry.lastHealth then entry.damagedAt = tick end
                 local ok, why = eligible(entry, tame, state)
                 if ok and health < max and max > 0 then
-                    local owed = max * CONFIG.PercentPerSecond / 100 * (CONFIG.TickMs / 1000) + entry.carry
+                    local owed = max * CONFIG.PercentPerSecond * entry.factor / 100 * (CONFIG.TickMs / 1000) + entry.carry
                     local amount = math.floor(owed)
                     entry.carry = owed - amount
                     if amount > max - health then amount = max - health end
@@ -187,7 +256,8 @@ local function healTick()
                     end
                     if not entry.healing then
                         entry.healing = true
-                        dbg("%s healing: %d/%d (+%d/s)", displayName(tame), health, max, amount)
+                        dbg("%s healing: %d/%d (+%d/s, talent rank %d = %.0f%%)", displayName(tame), health, max,
+                            amount, entry.rank, entry.factor * 100)
                     end
                 else
                     entry.carry = 0
@@ -259,10 +329,11 @@ pcall(RegisterConsoleCommandHandler, "tameregen", function(FullCommand, Paramete
             local okS, move = pcall(function() return tonumber(tame.MovementBehaviourState) end)
             local ok, why = true, "eligible"
             if state then ok, why = eligible(entry, tame, state) end
-            Ar:Log(string.format("   %-24s %5d/%-5d move=%s ridden=%s target=%s recentDmg=%.0f -> %s",
+            if state then entry.talentAt = nil; refreshTalent(entry, tame, state) end
+            Ar:Log(string.format("   %-24s %5d/%-5d move=%s ridden=%s target=%s recentDmg=%.0f talent=%d (%.0f%%, %s) -> %s",
                 displayName(tame), hp, max, okS and tostring(move) or "?", tostring(isRidden(tame)),
                 tostring(hasTarget(tame)), state and recentDamage(state, CONFIG.CombatGraceSeconds) or 0,
-                ok and "healing" or why))
+                entry.rank, entry.factor * 100, tostring(entry.row), ok and "healing" or why))
         end
     end
     Ar:Log("[TameRegen] usage: tameregen | tameregen rate <percent> | tameregen scan")
