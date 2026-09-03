@@ -413,6 +413,7 @@ def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
+    stale: list[str] = []
     for prefix, new in (("Massgate", pak), ("TameRegen", marker)):
         if new is None:
             continue
@@ -422,18 +423,21 @@ def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str
                 old.unlink()
             shutil.copy2(new, GAME_MODS / new.name)
         except PermissionError:
-            sys.exit(
-                "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
-                "   Close the game, then run:  python tools/build.py --merge-installed"
-                + (" --dev" if dev else "") + " --install\n"
-                "   (or --install --lua-only to refresh just the Lua mods while it runs)"
-            )
+            # A mounted pak is held open by the running game. Install everything else and say so.
+            stale.append(prefix)
+            print(f"!! {prefix} pak NOT replaced: Icarus is running and holds the installed one open")
+            continue
         print(f"   pak      -> {GAME_MODS / new.name}")
 
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
     target = install_lua_mod(REGEN_MOD, lambda scripts: write_regen_config(scripts, version, classes, talents))
     print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents)")
+    if stale:
+        sys.exit(
+            f"!! stale pak(s) still installed: {', '.join(stale)}. Close the game, then run:\n"
+            "   python tools/build.py --merge-installed" + (" --dev" if dev else "") + " --install"
+        )
 
 
 def main() -> int:
