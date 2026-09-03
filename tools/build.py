@@ -11,7 +11,10 @@ Usage:
                                           #   config gets DevMode = true (no power / exotics /
                                           #   cooldown, 10 m interference). Never ship a dev build.
     python tools/build.py --install       # also copy the pak into the game's Paks/mods folder and
-                                          #   the Lua mod into the UE4SS Mods folder
+                                          #   both Lua mods (Massgate, TameRegen) into the UE4SS Mods folder
+    python tools/build.py --install --lua-only
+                                          # skip the pak: refresh only the Lua mods (works while the
+                                          #   game runs; UE4SS Ctrl+R reloads them)
     python tools/build.py --repak PATH    # explicit path to repak.exe (else tools/bin/repak.exe)
 
 Steps:
@@ -37,6 +40,9 @@ ORIGINAL = REPO / "data" / "original"
 INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
+REGEN_MOD = REPO / "mod" / "ue4ss" / "TameRegen"   # second mod: fast healing for tames on Follow
+AISETUP_TABLE = "AI/D_AISetup.json"
+MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
 VERSION_FILE = REPO / "VERSION"
@@ -265,6 +271,40 @@ def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str
     )
 
 
+def mount_classes(tables: dict[str, tuple[Path, dict]]) -> list[str]:
+    """Actor classes the game spawns under /Game/BP/Mounts/ (mounts, pets, farm animals), from D_AISetup.
+    TameRegen watches these in addition to their common base class BP_Mount_Base_C."""
+    _, table = tables[AISETUP_TABLE]
+    return sorted({
+        str(row["ActorClass"]) for row in table.get("Rows", [])
+        if str(row.get("ActorClass", "")).startswith(MOUNT_CLASS_PREFIX)
+    })
+
+
+def write_regen_config(scripts_dir: Path, version: str, classes: list[str]) -> None:
+    lua_classes = "".join(f'        "{c}",\n' for c in classes)
+    (scripts_dir / "config.lua").write_text(
+        "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
+        "-- Tunables (PercentPerSecond, CombatGraceSeconds, ...) are documented in the repo's config.lua.\n"
+        "return {\n"
+        f"    Version = \"{version}\",\n"
+        "    MountClasses = {\n"
+        f"{lua_classes}"
+        "    },\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+def install_lua_mod(source: Path, write: callable) -> Path:
+    target = UE4SS_MODS / source.name
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    write(target / "Scripts")
+    return target
+
+
 RELEASE_README = """Massgate {version} for Icarus
 ================================
 
@@ -280,12 +320,16 @@ Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\W
 
 Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
 
+Also in this zip, optional and independent: the folder "TameRegen" (UE4SS Lua only, no pak).
+Copy it next to "Massgate" in ue4ss\\Mods\\ and tames set to Follow heal 0.5 % of their maximum
+health per second while out of combat. Only the host / server needs it.
+
 Source, docs and issues: https://github.com/Septuran/Massgate
 """
 
 
-def package(pak: Path, dev: bool, channels: list[str], version: str) -> Path:
-    """Build the distributable zip: the pak, the Lua mod folder and a README."""
+def package(pak: Path, dev: bool, channels: list[str], version: str, classes: list[str]) -> Path:
+    """Build the distributable zip: the pak, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
     staging = release_dir / f"Massgate_v{version}"
     if staging.exists():
@@ -294,35 +338,38 @@ def package(pak: Path, dev: bool, channels: list[str], version: str) -> Path:
     shutil.copy2(pak, staging / pak.name)
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
+    shutil.copytree(REGEN_MOD, staging / REGEN_MOD.name)
+    write_regen_config(staging / REGEN_MOD.name / "Scripts", version, classes)
     (staging / "README.txt").write_text(RELEASE_README.format(version=version, pak=pak.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
     return Path(archive)
 
 
-def install(pak: Path, dev: bool, channels: list[str], version: str) -> None:
+def install(pak: Path | None, dev: bool, channels: list[str], version: str, classes: list[str]) -> None:
+    """Copy the pak (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
-    try:
-        # Only one Massgate pak may be installed at a time; the name carries the version.
-        for old in GAME_MODS.glob("Massgate*_P.pak"):
-            old.unlink()
-        shutil.copy2(pak, GAME_MODS / pak.name)
-    except PermissionError:
-        sys.exit(
-            "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
-            "   Close the game, then run:  python tools/build.py --merge-installed"
-            + (" --dev" if dev else "") + " --install"
-        )
-    print(f"   pak      -> {GAME_MODS / pak.name}")
+    if pak is not None:
+        try:
+            # Only one Massgate pak may be installed at a time; the name carries the version.
+            for old in GAME_MODS.glob("Massgate*_P.pak"):
+                old.unlink()
+            shutil.copy2(pak, GAME_MODS / pak.name)
+        except PermissionError:
+            sys.exit(
+                "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
+                "   Close the game, then run:  python tools/build.py --merge-installed"
+                + (" --dev" if dev else "") + " --install\n"
+                "   (or --install --lua-only to refresh just the Lua mods while it runs)"
+            )
+        print(f"   pak      -> {GAME_MODS / pak.name}")
 
-    target = UE4SS_MODS / LUA_MOD.name
-    if target.exists():
-        shutil.rmtree(target)
-    shutil.copytree(LUA_MOD, target)
-    write_config(target / "Scripts", dev, channels, version)
+    target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
+    target = install_lua_mod(REGEN_MOD, lambda scripts: write_regen_config(scripts, version, classes))
+    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes)")
 
 
 def main() -> int:
@@ -331,11 +378,22 @@ def main() -> int:
     ap.add_argument("--dev", action="store_true")
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--package", action="store_true", help="build the release zip in build/release/")
+    ap.add_argument("--lua-only", action="store_true",
+                    help="with --install: refresh only the Lua mods (no pak build; works while Icarus runs)")
     ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
     args = ap.parse_args()
 
     if not ORIGINAL.exists():
         sys.exit("!! data/original missing: unpack data.pak first (see README)")
+    if args.lua_only:
+        if not args.install or args.package:
+            sys.exit("!! --lua-only only makes sense together with --install (and not --package)")
+        tables = load_base_tables(False)
+        patches = read_json(PATCHES)
+        version = build_version(args.dev)
+        print(f"installing Lua mods only, version {version}")
+        install(None, args.dev, patches.get("channels", []), version, mount_classes(tables))
+        return 0
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
     if args.package:
@@ -369,12 +427,13 @@ def main() -> int:
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
+    classes = mount_classes(tables)
     if args.install:
         print("7. installing")
-        install(out, args.dev, patches.get("channels", []), version)
+        install(out, args.dev, patches.get("channels", []), version, classes)
     if args.package:
         print("8. packaging")
-        archive = package(out, args.dev, patches.get("channels", []), version)
+        archive = package(out, args.dev, patches.get("channels", []), version, classes)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 

@@ -51,11 +51,28 @@ powered, the cooldown is off, the interference radius is 10 m and trips cost no 
 still need power or a Phase Coupler. Rebuild without `--dev` for the real rules (the Exotics buffer
 was verified on a dev build with real costs before they were switched off). Never ship a dev build.
 
+## TameRegen (second mod in this repo)
+
+`mod/ue4ss/TameRegen/` is an independent UE4SS Lua mod, no pak needed: every tame set to
+**Follow** heals **0.5 % of its maximum health per second** while out of combat (no attack
+target and no damage for 10 s), on top of the game's flat 10-50 HP/minute. A 2,200 HP mount
+is back to full in about 3.5 minutes instead of two hours. Mounts, pets and farm animals all
+count (everything derived from `BP_Mount_Base_C`). Only the host or server needs it.
+
+`--install` installs it next to Massgate; `--install --lua-only` refreshes just the Lua mods
+without rebuilding the pak, which also works while the game runs (UE4SS reloads Lua with
+Ctrl+R). Tunables (`PercentPerSecond`, `CombatGraceSeconds`, `RequireFollow`,
+`HealWhileRidden`) are documented in `mod/ue4ss/TameRegen/Scripts/config.lua`. With the
+console: `tameregen` lists the known tames and why each is or is not healing,
+`tameregen rate 1` changes the rate for the session, `tameregen scan` picks up tames that
+spawned before the mod loaded (one-off object walk, diagnostic only). Log prefix `[TameRegen]`.
+
 ## Layout
 
 ```
 mod/data/patches.json     rows we add to the data tables
 mod/ue4ss/Massgate/       UE4SS Lua mod (Scripts/main.lua, enabled.txt)
+mod/ue4ss/TameRegen/      second UE4SS Lua mod: fast healing for tames on Follow (no pak)
 tools/build.py            applies patches, validates references, packs with repak
 tools/find_rows.py        search the extracted tables for a term
 docs/design.md            concept, lore, rules, row map, roadmap
