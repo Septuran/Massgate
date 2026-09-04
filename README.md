@@ -51,43 +51,48 @@ powered, the cooldown is off, the interference radius is 10 m and trips cost no 
 still need power or a Phase Coupler. Rebuild without `--dev` for the real rules (the Exotics buffer
 was verified on a dev build with real costs before they were switched off). Never ship a dev build.
 
-## TameRegen (second mod in this repo)
+## Fieldkit (second mod in this repo)
 
-`mod/ue4ss/TameRegen/` is an independent UE4SS Lua mod with a small pak of its own: every tame set to
-**Follow** heals **0.25 % of its maximum health per second** while out of combat (no attack
-target and no damage for 10 s), on top of the game's flat 10-50 HP/minute. A 2,200 HP mount
-is back to full in about 7 minutes instead of two hours. Mounts, pets and farm animals all
-count (everything derived from `BP_Mount_Base_C`). Only the host or server needs it.
+`mod/ue4ss/Fieldkit/` is an independent UE4SS Lua mod with a small pak of its own: a kit of
+quality-of-life features, one file each under `Scripts/features/`, switched on and off from
+the game's own **Custom World Settings** screen (Escape, then Custom World Settings, host
+only). The pak `Fieldkit_v<version>_P.pak`, built from `mod/data/fieldkit_patches.json`,
+adds the features' rows to that screen; the game renders, saves and replicates them, and the
+Lua reads them from the ProspectSubsystem, applying changes the moment the host presses
+Apply. A prospect where the rows were never applied runs on the defaults. Only the host or
+server needs the Lua; everyone needs the pak.
 
-The rate scales with the creature talent **Nurtured Recovery** (the "+5/+15/+30/+60 % Health
-Regeneration" node in every companion tree): rank 4 gives the full 0.25 %/s, ranks 1-3 give
-8 / 25 / 50 % of it, and a tame without the talent gets only the game's own regen
-(`NoTalentFraction`). The talent rows are read from D_Talents at build time; the rank comes
-from the mount's replicated talent list at run time.
+Features:
 
-**In-game switches.** The mod's own pak, `TameRegen_v<version>_P.pak` built from
-`mod/data/tameregen_patches.json`, adds two rows to the game's Custom World Settings screen
-(Escape, then Custom World Settings, host only), under Creatures: an on/off toggle and the rate in
-percent of maximum health per minute (1 to 60, default 15 = 0.25 %/s). The game renders,
-saves and replicates those settings itself. The Lua reads them from the ProspectSubsystem and
-applies changes the moment the host presses Apply. A prospect without the rows uses the
-defaults. The same pak makes the "Mods Detected" dialog list TameRegen with its version.
+- **tameregen** (Creatures section): every tame set to **Follow** heals a share of its
+  maximum health every second while out of combat (no attack target and no damage for 10 s),
+  on top of the game's flat 10-50 HP/minute. Rate row: percent of maximum health per minute,
+  1 to 60, default 15 = 0.25 %/s, so a 2,200 HP mount is back to full in about 7 minutes.
+  Scales with the creature talent **Nurtured Recovery**: rank 4 gives the full rate, ranks
+  1-3 give 8 / 25 / 50 % of it, no talent gives nothing (`NoTalentFraction`). Mounts, pets
+  and farm animals all count (everything derived from `BP_Mount_Base_C`).
 
-`--install` installs the Lua next to Massgate and the pak next to the Massgate pak.
-`--install --lua-only` refreshes just the Lua mods without touching either pak, which also
-works while the game runs (UE4SS reloads Lua with Ctrl+R). Remaining tunables (`CombatGraceSeconds`, `RequireFollow`,
-`HealWhileRidden`) are documented in `mod/ue4ss/TameRegen/Scripts/config.lua`. With the
-console: `tameregen` lists the known tames and why each is or is not healing,
-`tameregen rate 1` changes the rate for the session, `tameregen scan` picks up tames that
-spawned before the mod loaded (one-off object walk, diagnostic only). Log prefix `[TameRegen]`.
+Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
+settingsChanged, console, status }` (see the header of `main.lua`), its id in
+`CONFIG.Features`, and its rows in `fieldkit_patches.json` (a `D_CustomGameStats` row per
+switch, bound to a hidden world stat row in `D_Stats`, names prefixed `Fieldkit_`).
+
+`--install` installs the Lua next to Massgate and the pak next to the Massgate pak, and
+removes the old TameRegen copies. `--install --lua-only` refreshes just the Lua mods without
+touching either pak, which also works while the game runs (UE4SS reloads Lua with Ctrl+R).
+Per-feature tunables are documented in `mod/ue4ss/Fieldkit/Scripts/config.lua`. Console:
+`fieldkit` (overview), `fieldkit tames`, `fieldkit tameregen` (per-tame health and why each
+is or is not healing), `fieldkit tameregen rate <percent per second>` (session override),
+`fieldkit scan` (one-off object walk to pick up tames that spawned before the mod loaded,
+diagnostic only). Log prefixes `[Fieldkit]` and `[Fieldkit:<feature>]`.
 
 ## Layout
 
 ```
 mod/data/patches.json     rows we add to the data tables
 mod/ue4ss/Massgate/       UE4SS Lua mod (Scripts/main.lua, enabled.txt)
-mod/ue4ss/TameRegen/      second UE4SS Lua mod: fast healing for tames on Follow
-mod/data/tameregen_patches.json  its Custom World Settings rows -> TameRegen_v<ver>_P.pak
+mod/ue4ss/Fieldkit/       second UE4SS Lua mod: quality-of-life features (Scripts/features/*.lua)
+mod/data/fieldkit_patches.json   their Custom World Settings rows -> Fieldkit_v<ver>_P.pak
 tools/build.py            applies patches, validates references, packs with repak
 tools/find_rows.py        search the extracted tables for a term
 docs/design.md            concept, lore, rules, row map, roadmap

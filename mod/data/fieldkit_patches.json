@@ -1,0 +1,70 @@
+{
+    "_comment": "Rows the Fieldkit pak adds. Fieldkit's features are Lua; these rows put their switches into the game's own Custom World Settings screen (Escape -> Custom World Settings, host only): D_CustomGameStats rows are rendered by that screen automatically (Bool = toggle, Int = stepper between MinIntValue and MaxIntValue, DropDown = list), each bound to a hidden world stat in D_Stats. The Lua reads the values from the ProspectSubsystem's settings array by row name. Row names are prefixed Fieldkit_ and carry the feature name. This file must not touch any table mod/data/patches.json touches (both paks replace whole tables; build.py checks).",
+    "tables": [
+        {
+            "table": "Stats/D_Stats.json",
+            "_comment": "World stats the settings bind to. Hidden; the Lua never reads the stat, only the setting.",
+            "add": [
+                {
+                    "Name": "Fieldkit_TameRegen_?",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_TameRegen_?-Title\", \"Tame Regeneration (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_TameRegen_?-PositiveDescription\", \"Tames on Follow heal faster out of combat\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_TameRegenRate_+",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_TameRegenRate_+-Title\", \"Tame Regeneration Rate (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_TameRegenRate_+-PositiveDescription\", \"{0}% of maximum health per minute\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                }
+            ]
+        },
+        {
+            "table": "Stats/D_CustomGameStats.json",
+            "_comment": "Feature tameregen, Creatures section.",
+            "add": [
+                {
+                    "Name": "Fieldkit_TameRegen",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_TameRegen-DisplayName\", \"Fieldkit: Tame Regeneration\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_TameRegen-Description\", \"Tames set to Follow heal a share of their maximum health every second while out of combat, scaled by their Nurtured Recovery talent rank. Off leaves the game's normal regeneration.\")",
+                    "Category": "Creatures",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Bool",
+                    "DefaultValue": 1,
+                    "Stat": {
+                        "RowName": "Fieldkit_TameRegen_?"
+                    },
+                    "MaxIntValue": 1
+                },
+                {
+                    "Name": "Fieldkit_TameRegenRate",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_TameRegenRate-DisplayName\", \"Fieldkit: Tame Regeneration Rate\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_TameRegenRate-Description\", \"Percent of maximum health healed per minute at Nurtured Recovery rank 4; lower ranks get a share. 15 is the default: a 2,200 HP mount is back to full in about 7 minutes.\")",
+                    "Category": "Creatures",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Int",
+                    "DefaultValue": 15,
+                    "Stat": {
+                        "RowName": "Fieldkit_TameRegenRate_+"
+                    },
+                    "MinIntValue": 1,
+                    "MaxIntValue": 60
+                }
+            ]
+        }
+    ]
+}

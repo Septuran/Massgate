@@ -11,7 +11,7 @@ Usage:
                                           #   config gets DevMode = true (no power / exotics /
                                           #   cooldown, 10 m interference). Never ship a dev build.
     python tools/build.py --install       # also copy the pak into the game's Paks/mods folder and
-                                          #   both Lua mods (Massgate, TameRegen) into the UE4SS Mods folder
+                                          #   both Lua mods (Massgate, Fieldkit) into the UE4SS Mods folder
     python tools/build.py --install --lua-only
                                           # skip the pak: refresh only the Lua mods (works while the
                                           #   game runs; UE4SS Ctrl+R reloads them)
@@ -24,7 +24,7 @@ Steps:
   4. validate every row reference we introduce points at an existing row
   5. write the full tables to build/pak/Icarus/Content/Data/...
   6. pack build/pak into build/Massgate_v<ver>_P.pak with repak (V11, zlib); then the same for
-     mod/data/tameregen_patches.json -> build/TameRegen_v<ver>_P.pak (Custom World Settings rows)
+     mod/data/fieldkit_patches.json -> build/Fieldkit_v<ver>_P.pak (Custom World Settings rows)
   7. (--install) copy both paks + both Lua mods into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
@@ -41,13 +41,14 @@ ORIGINAL = REPO / "data" / "original"
 INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
-REGEN_MOD = REPO / "mod" / "ue4ss" / "TameRegen"   # second mod: fast healing for tames on Follow
-REGEN_PATCHES = REPO / "mod" / "data" / "tameregen_patches.json"  # its Custom World Settings rows
+FIELDKIT_MOD = REPO / "mod" / "ue4ss" / "Fieldkit"   # second mod: quality-of-life features, one file each
+LEGACY_MODS = ("TameRegen",)                         # earlier names; --install removes their game copies
+FIELDKIT_PATCHES = REPO / "mod" / "data" / "fieldkit_patches.json"  # its Custom World Settings rows
 AISETUP_TABLE = "AI/D_AISetup.json"
 MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
-REGEN_PAK_ROOT = BUILD / "regen_pak"
+FIELDKIT_PAK_ROOT = BUILD / "fieldkit_pak"
 VERSION_FILE = REPO / "VERSION"
 
 
@@ -273,19 +274,19 @@ def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: 
         print(f"   {key}")
 
 
-def build_regen_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
-    """TameRegen's own pak: the Custom World Settings rows from tameregen_patches.json. Built on a fresh
+def build_fieldkit_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
+    """Fieldkit's own pak: the Custom World Settings rows from fieldkit_patches.json. Built on a fresh
     copy of the base tables. Both paks replace whole tables and load alphabetically, so a table
     touched by both would lose Massgate's rows; refuse that."""
     tables = load_base_tables(merge_installed, quiet=True)
-    introduced = apply_patches(tables, read_json(REGEN_PATCHES))
+    introduced = apply_patches(tables, read_json(FIELDKIT_PATCHES))
     touched = sorted({key for key, _ in introduced})
     overlap = sorted(set(touched) & set(massgate_touched))
     if overlap:
-        sys.exit(f"!! tameregen_patches.json and patches.json both touch {overlap}; move the rows into one file")
+        sys.exit(f"!! fieldkit_patches.json and patches.json both touch {overlap}; move the rows into one file")
     validate(tables, introduced)
-    write_tables(REGEN_PAK_ROOT, tables, touched)
-    return pack(repak, version, REGEN_PAK_ROOT, "TameRegen")
+    write_tables(FIELDKIT_PAK_ROOT, tables, touched)
+    return pack(repak, version, FIELDKIT_PAK_ROOT, "Fieldkit")
 
 
 def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str) -> None:
@@ -303,7 +304,7 @@ def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str
 
 def mount_classes(tables: dict[str, tuple[Path, dict]]) -> list[str]:
     """Actor classes the game spawns under /Game/BP/Mounts/ (mounts, pets, farm animals), from D_AISetup.
-    TameRegen watches these in addition to their common base class BP_Mount_Base_C."""
+    Fieldkit watches these in addition to their common base class BP_Mount_Base_C."""
     _, table = tables[AISETUP_TABLE]
     return sorted({
         str(row["ActorClass"]) for row in table.get("Rows", [])
@@ -318,7 +319,7 @@ REGEN_STAT_KEY = '(Value="BaseHealthRegen_+%")'
 def regen_talents(tables: dict[str, tuple[Path, dict]]) -> dict[str, list[int]]:
     """The creature talent 'Nurtured Recovery' (one row per species, e.g.
     Creature_Base_HealthRegeneration_Buffalo): row name -> the health-regen bonus of each rank.
-    TameRegen scales its heal by the unlocked rank's share of the top rank."""
+    Fieldkit scales its heal by the unlocked rank's share of the top rank."""
     _, table = tables[TALENTS_TABLE]
     found: dict[str, list[int]] = {}
     for row in table.get("Rows", []):
@@ -333,22 +334,29 @@ def regen_talents(tables: dict[str, tuple[Path, dict]]) -> dict[str, list[int]]:
     return found
 
 
-def write_regen_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
+def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
     lua_classes = "".join(f'        "{c}",\n' for c in classes)
     lua_talents = "".join(
         f'        ["{name}"] = {{ {", ".join(str(v) for v in ranks)} }},\n' for name, ranks in sorted(talents.items())
     )
     (scripts_dir / "config.lua").write_text(
         "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
-        "-- Tunables (PercentPerSecond, CombatGraceSeconds, ...) are documented in the repo's config.lua.\n"
+        "-- Tunables are documented in the repo's config.lua; keys deep-merge into main.lua's CONFIG.\n"
         "return {\n"
         f"    Version = \"{version}\",\n"
-        "    MountClasses = {\n"
-        f"{lua_classes}"
+        "    Tames = {\n"
+        "        -- every mount, pet and farm animal class from D_AISetup\n"
+        "        MountClasses = {\n"
+        f"{''.join('    ' + line + chr(10) for line in lua_classes.splitlines())}"
+        "        },\n"
         "    },\n"
-        "    -- Nurtured Recovery rows from D_Talents: per-rank regen bonus, used to scale the heal\n"
-        "    RegenTalents = {\n"
-        f"{lua_talents}"
+        "    FeatureConfig = {\n"
+        "        tameregen = {\n"
+        "            -- Nurtured Recovery rows from D_Talents: per-rank regen bonus, used to scale the heal\n"
+        "            RegenTalents = {\n"
+        f"{''.join('        ' + line + chr(10) for line in lua_talents.splitlines())}"
+        "            },\n"
+        "        },\n"
         "    },\n"
         "}\n",
         encoding="utf-8",
@@ -379,17 +387,18 @@ Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\W
 
 Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
 
-Also in this zip, optional and independent: TameRegen. Copy the folder "TameRegen" next to
-"Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\. Tames set to Follow then heal a share
-of their maximum health every second while out of combat, scaled by their Nurtured Recovery
-talent. Switch it on or off and set the rate in game: Escape -> Custom World Settings -> Creatures
-(host only). Only the host / server needs the Lua; everyone needs the pak.
+Also in this zip, optional and independent: Fieldkit, a kit of quality-of-life features. Copy the
+folder "Fieldkit" next to "Massgate" in ue4ss\\Mods\\ and {fk_pak} into Paks\\mods\\ (remove any
+older Fieldkit or TameRegen files first). Every feature is switched on or off in game: Escape ->
+Custom World Settings (host only). Features: Tame Regeneration (tames set to Follow heal a share of
+their maximum health every second while out of combat, scaled by their Nurtured Recovery talent;
+Creatures section, with a rate row). Only the host / server needs the Lua; everyone needs the pak.
 
 Source, docs and issues: https://github.com/Septuran/Massgate
 """
 
 
-def package(pak: Path, marker: Path, dev: bool, channels: list[str], version: str, classes: list[str],
+def package(pak: Path, fk_pak: Path, dev: bool, channels: list[str], version: str, classes: list[str],
             talents: dict[str, list[int]]) -> Path:
     """Build the distributable zip: both paks, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
@@ -398,18 +407,18 @@ def package(pak: Path, marker: Path, dev: bool, channels: list[str], version: st
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     shutil.copy2(pak, staging / pak.name)
-    shutil.copy2(marker, staging / marker.name)
+    shutil.copy2(fk_pak, staging / fk_pak.name)
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
-    shutil.copytree(REGEN_MOD, staging / REGEN_MOD.name)
-    write_regen_config(staging / REGEN_MOD.name / "Scripts", version, classes, talents)
+    shutil.copytree(FIELDKIT_MOD, staging / FIELDKIT_MOD.name)
+    write_fieldkit_config(staging / FIELDKIT_MOD.name / "Scripts", version, classes, talents)
     (staging / "README.txt").write_text(
-        RELEASE_README.format(version=version, pak=pak.name, marker=marker.name), encoding="utf-8")
+        RELEASE_README.format(version=version, pak=pak.name, fk_pak=fk_pak.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
     return Path(archive)
 
 
-def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str], version: str,
+def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str], version: str,
             classes: list[str], talents: dict[str, list[int]]) -> None:
     """Copy the paks (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
@@ -417,7 +426,7 @@ def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
     stale: list[str] = []
-    for prefix, new in (("Massgate", pak), ("TameRegen", marker)):
+    for prefix, new in (("Massgate", pak), ("Fieldkit", fk_pak)):
         if new is None:
             continue
         try:
@@ -432,9 +441,22 @@ def install(pak: Path | None, marker: Path | None, dev: bool, channels: list[str
             continue
         print(f"   pak      -> {GAME_MODS / new.name}")
 
+    for legacy in LEGACY_MODS:
+        old_lua = UE4SS_MODS / legacy
+        if old_lua.exists():
+            shutil.rmtree(old_lua)
+            print(f"   removed old lua mod {old_lua}")
+        for old in GAME_MODS.glob(f"{legacy}*_P.pak"):
+            try:
+                old.unlink()
+                print(f"   removed old pak {old}")
+            except PermissionError:
+                stale.append(legacy)
+                print(f"!! old {legacy} pak NOT removed: Icarus is running and holds it open")
+
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
-    target = install_lua_mod(REGEN_MOD, lambda scripts: write_regen_config(scripts, version, classes, talents))
+    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents))
     print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents)")
     if stale:
         sys.exit(
@@ -493,16 +515,16 @@ def main() -> int:
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
-    print("6b. TameRegen pak (Custom World Settings rows)")
-    marker = build_regen_pak(args.repak, args.merge_installed, version, touched)
-    print(f"   -> {marker} ({marker.stat().st_size:,} bytes)")
+    print("6b. Fieldkit pak (Custom World Settings rows)")
+    fk_pak = build_fieldkit_pak(args.repak, args.merge_installed, version, touched)
+    print(f"   -> {fk_pak} ({fk_pak.stat().st_size:,} bytes)")
     classes, talents = mount_classes(tables), regen_talents(tables)
     if args.install:
         print("7. installing")
-        install(out, marker, args.dev, patches.get("channels", []), version, classes, talents)
+        install(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents)
     if args.package:
         print("8. packaging")
-        archive = package(out, marker, args.dev, patches.get("channels", []), version, classes, talents)
+        archive = package(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 
