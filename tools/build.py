@@ -15,6 +15,9 @@ Usage:
     python tools/build.py --install --lua-only
                                           # skip the pak: refresh only the Lua mods (works while the
                                           #   game runs; UE4SS Ctrl+R reloads them)
+    python tools/build.py --extract ...   # re-extract data/original from the game's data.pak first;
+                                          #   required after every game update (the build refuses to
+                                          #   run on tables older than data.pak)
     python tools/build.py --repak PATH    # explicit path to repak.exe (else tools/bin/repak.exe)
 
 Steps:
@@ -73,6 +76,32 @@ def pak_name(version: str) -> str:
 GAME = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus")
 GAME_MODS = GAME / "Content" / "Paks" / "mods"
 UE4SS_MODS = GAME / "Binaries" / "Win64" / "ue4ss" / "Mods"
+GAME_DATA_PAK = GAME / "Content" / "Data" / "data.pak"
+DATA_MOUNT_PREFIX = "C:/BA/work/92bbbfa44df12262/Temp/Data/"  # odd build-machine path inside data.pak
+
+
+def extract_game_tables(repak: Path) -> None:
+    """Re-extract data/original from the game's data.pak (after a game update)."""
+    if not GAME_DATA_PAK.exists():
+        sys.exit(f"!! game data.pak not found: {GAME_DATA_PAK}")
+    if ORIGINAL.exists():
+        shutil.rmtree(ORIGINAL)
+    ORIGINAL.mkdir(parents=True)
+    subprocess.run([str(repak), "unpack", "-s", DATA_MOUNT_PREFIX, "-o", str(ORIGINAL), str(GAME_DATA_PAK)], check=True)
+    print(f"   extracted {sum(1 for _ in ORIGINAL.rglob('*.json'))} tables from {GAME_DATA_PAK}")
+
+
+def check_tables_current() -> None:
+    """Our paks replace whole tables, so tables extracted before a game update silently undo that
+    update (2026-09-04: Sulfur lost its icon because its texture was renamed). Refuse to build."""
+    probe = ORIGINAL / "Items" / "D_ItemsStatic.json"
+    if not GAME_DATA_PAK.exists() or not probe.exists():
+        return
+    if GAME_DATA_PAK.stat().st_mtime > probe.stat().st_mtime:
+        sys.exit(
+            "!! the game's data.pak is newer than data/original: Icarus updated since the tables were extracted.\n"
+            "   Re-extract first:  python tools/build.py --extract   (then build as usual)"
+        )
 
 RECIPE_TABLE = "Crafting/D_ProcessorRecipes.json"
 RECIPE_ROW = "Massgate_"  # prefix: every recipe we add
@@ -473,11 +502,19 @@ def main() -> int:
     ap.add_argument("--package", action="store_true", help="build the release zip in build/release/")
     ap.add_argument("--lua-only", action="store_true",
                     help="with --install: refresh only the Lua mods (no pak build; works while Icarus runs)")
+    ap.add_argument("--extract", action="store_true",
+                    help="re-extract data/original from the game's data.pak first (after a game update)")
     ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
     args = ap.parse_args()
 
+    if args.extract:
+        if not args.repak.exists():
+            sys.exit(f"!! repak not found at {args.repak}")
+        print("0. extracting game tables")
+        extract_game_tables(args.repak)
     if not ORIGINAL.exists():
-        sys.exit("!! data/original missing: unpack data.pak first (see README)")
+        sys.exit("!! data/original missing: run  python tools/build.py --extract")
+    check_tables_current()
     if args.lua_only:
         if not args.install or args.package:
             sys.exit("!! --lua-only only makes sense together with --install (and not --package)")

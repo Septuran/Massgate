@@ -23,12 +23,14 @@ Two parts ship together and both are required:
 
 ## Building
 
-1. Unpack the game's data tables once:
+1. Unpack the game's data tables:
    ```
-   tools\bin\repak.exe unpack -s "C:/BA/work/92bbbfa44df12262/Temp/Data/" -o data\original "D:\SteamLibrary\steamapps\common\Icarus\Icarus\Content\Data\data.pak"
+   python tools\build.py --extract
    ```
-   The mount prefix inside data.pak is that odd build-machine path; strip it or the
-   files land in the wrong place.
+   (runs `repak unpack` with the odd build-machine mount prefix stripped). **Redo this after
+   every game update**: both paks replace whole tables, so stale tables silently undo the
+   update (2026-09-04: Sulfur lost its icon that way). The build refuses to run while
+   `data.pak` is newer than the extracted tables.
 2. Build the pak:
    ```
    python tools\build.py --merge-installed --install
