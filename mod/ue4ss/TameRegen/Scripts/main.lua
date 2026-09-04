@@ -20,6 +20,11 @@
         replicates it to clients.
       * Runs only where the game has authority (solo, host, or a UE4SS dedicated server).
 
+    In-game switches: the TameRegen pak adds an on/off toggle and the rate (% of max health per
+    minute) to the game's Prospect Settings screen (Escape -> Prospect Settings -> Creatures, host
+    only); see the Prospect Settings section below. The defaults above apply when a prospect has
+    no such rows yet.
+
     Console (needs a console enabler): `tameregen` lists the known tames and their state,
     `tameregen rate <percent>` changes the rate for this session, `tameregen scan` does a
     one-off FindAllOf to pick up tames that spawned before the mod hooked in (diagnostic only,
@@ -47,6 +52,17 @@ local CONFIG = {
     MountClasses        = {},      -- concrete classes, written by build.py (belt and braces: the
                                    -- base-class notification already covers subclasses)
     ScanClass           = "BP_Mount_Base_C", -- for the explicit `tameregen scan` command only
+    -- In-game switches: the TameRegen pak adds two rows to D_CustomGameStats, which the game's
+    -- Prospect Settings screen (Escape -> Prospect Settings, host only) renders, saves with the
+    -- prospect and replicates. We read them from the ProspectSubsystem's settings array
+    -- (FCustomGameSetting = { SettingRowName, SettingValue }). Rows absent = defaults above.
+    ProspectSettings     = true,
+    SettingEnabledRow    = "QoL_TameRegen",      -- Bool: 1 = on
+    SettingRateRow       = "QoL_TameRegenRate",  -- Int: % of max health per MINUTE at talent rank 4
+    SettingsRefreshTicks = 5,                    -- re-read this often (a handful of array reads)
+    SubsystemClass       = "/Script/Icarus.ProspectSubsystem",
+    SubsystemLibrary     = "/Script/Engine.Default__SubsystemBlueprintLibrary",
+    SubsystemSetHook     = "/Script/Icarus.ProspectSubsystem:SetCustomProspectSettings",
     Version             = "dev",
     Debug               = true,
 }
@@ -66,6 +82,7 @@ if okCfg and type(userConfig) == "table" then
 else
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end
+local DEFAULT_RATE = CONFIG.PercentPerSecond -- restored when a prospect has no rate setting
 log("TameRegen v%s loaded: %.2f%% of max health per second for tames on Follow, %d s combat grace",
     tostring(CONFIG.Version), CONFIG.PercentPerSecond, CONFIG.CombatGraceSeconds)
 
@@ -168,12 +185,88 @@ local function talentFactor(rank, row)
 end
 
 ------------------------------------------------------------------------------------------
+-- Prospect Settings
+------------------------------------------------------------------------------------------
+
+local tick = 0           -- one per TickMs; every timestamp in this file is in ticks
+
+local settings = {
+    enabled     = true,
+    rateRow     = nil,      -- the Int value last read, nil = row absent
+    manualRate  = false,    -- `tameregen rate` was used; keep it until the settings change
+    dirty       = true,     -- re-read on the next tick
+    readAt      = nil,
+    source      = "defaults",
+}
+local subsystem = nil
+
+-- Direct lookup through the engine's subsystem library (no object-table walk). Needs any
+-- world-bound object as context; a registered tame does.
+local function prospectSubsystem(context)
+    if valid(subsystem) then return subsystem end
+    subsystem = nil
+    local ok, err = pcall(function()
+        local lib = StaticFindObject(CONFIG.SubsystemLibrary)
+        local cls = StaticFindObject(CONFIG.SubsystemClass)
+        if not valid(lib) or not valid(cls) then error("library or class not found") end
+        local sub = lib:GetGameInstanceSubsystem(context, cls)
+        if valid(sub) then subsystem = sub end
+    end)
+    if not ok then dbg("ProspectSubsystem lookup failed: %s", tostring(err)) end
+    if subsystem then dbg("ProspectSubsystem found: %s", shortName(subsystem)) end
+    return subsystem
+end
+
+local function readSettings(context)
+    if not CONFIG.ProspectSettings then return end
+    if not settings.dirty and settings.readAt and tick - settings.readAt < CONFIG.SettingsRefreshTicks then return end
+    settings.readAt, settings.dirty = tick, false
+    local sub = prospectSubsystem(context)
+    if not sub then return end
+    local enabled, rate = nil, nil
+    local ok, err = pcall(function()
+        local list = sub.CustomGameSettings
+        if list == nil then return end
+        list:ForEach(function(_, elem)
+            local s = unwrap(elem)
+            local okN, name = pcall(function() return s.SettingRowName:ToString() end)
+            if not okN then return end
+            local okV, value = pcall(function() return tonumber(s.SettingValue) end)
+            if not okV then return end
+            if name == CONFIG.SettingEnabledRow then enabled = value ~= 0 end
+            if name == CONFIG.SettingRateRow then rate = value end
+        end)
+    end)
+    if not ok then dbg("settings read failed: %s", tostring(err)); return end
+    local newEnabled = enabled == nil and true or enabled
+    local newRate = settings.manualRate and CONFIG.PercentPerSecond or (rate and rate / 60 or DEFAULT_RATE)
+    local source = (enabled == nil and rate == nil) and "defaults (rows not in this prospect yet)" or "Prospect Settings"
+    if newEnabled ~= settings.enabled or newRate ~= CONFIG.PercentPerSecond or source ~= settings.source then
+        log("settings: %s, %.3f%% of max health per second (%s)", newEnabled and "ON" or "OFF", newRate, source)
+    end
+    settings.enabled, settings.rateRow, settings.source = newEnabled, rate, source
+    CONFIG.PercentPerSecond = newRate
+end
+
+-- The host pressing Apply calls this on the subsystem; re-read right after it ran.
+if CONFIG.ProspectSettings then
+    local ok, err = pcall(RegisterHook, CONFIG.SubsystemSetHook,
+        function(self) subsystem = valid(self) and self or subsystem end,
+        function(self)
+            subsystem = valid(self) and self or subsystem
+            settings.dirty, settings.manualRate = true, false
+            dbg("Prospect Settings applied; re-reading")
+        end)
+    if ok then dbg("hooked %s", CONFIG.SubsystemSetHook)
+    else log("could not hook %s (%s); settings still refresh every %d ticks", CONFIG.SubsystemSetHook, tostring(err), CONFIG.SettingsRefreshTicks) end
+end
+
+------------------------------------------------------------------------------------------
 -- Registry: full name -> { actor, carry (fractional HP owed), lastHealth, damagedAt, healing,
 --                          rank, row, factor, talentAt (tick of the last talent read) }
 ------------------------------------------------------------------------------------------
 
-local registry = {}
-local tick = 0           -- one per TickMs; timestamps below are in ticks
+local registry = {}      -- (tick counter is declared above the Prospect Settings section)
 
 local function register(actor, source)
     if not valid(actor) then return end
@@ -212,6 +305,7 @@ end
 
 local function eligible(entry, tame, state)
     if not hasAuthority(tame) then return false, "no authority" end
+    if not settings.enabled then return false, "off in Prospect Settings" end
     local okAlive, alive = pcall(function() return state:IsAlive() end)
     if not okAlive or alive ~= true then return false, "dead" end
     if not isFollowing(tame) then return false, "not on Follow" end
@@ -239,6 +333,7 @@ local function healTick()
         if not valid(tame) then
             registry[key] = nil
         else
+            readSettings(tame) -- throttled inside; the tame is only the world context
             local state = stateOf(tame)
             if state then
                 local health, max = state:GetHealth(), state:GetMaxHealth()
@@ -304,7 +399,8 @@ for _, classPath in ipairs(CONFIG.MountClasses) do watch(classPath) end
 pcall(RegisterConsoleCommandHandler, "tameregen", function(FullCommand, Parameters, Ar)
     if Parameters[1] == "rate" and tonumber(Parameters[2]) then
         CONFIG.PercentPerSecond = tonumber(Parameters[2])
-        Ar:Log(string.format("[TameRegen] rate set to %.2f%% of max health per second (this session only)", CONFIG.PercentPerSecond))
+        settings.manualRate = true
+        Ar:Log(string.format("[TameRegen] rate set to %.2f%% of max health per second (until Prospect Settings are applied again)", CONFIG.PercentPerSecond))
         log("rate set to %.2f%%/s from the console", CONFIG.PercentPerSecond)
         return true
     end
@@ -318,8 +414,9 @@ pcall(RegisterConsoleCommandHandler, "tameregen", function(FullCommand, Paramete
         Ar:Log(string.format("[TameRegen] scan found %d %s actors; %d registered", n, CONFIG.ScanClass, count()))
         return true
     end
-    Ar:Log(string.format("[TameRegen] v%s  rate %.2f%%/s  grace %d s  tick %d  tames %d",
-        tostring(CONFIG.Version), CONFIG.PercentPerSecond, CONFIG.CombatGraceSeconds, tick, count()))
+    Ar:Log(string.format("[TameRegen] v%s  %s  rate %.3f%%/s  grace %d s  tick %d  tames %d  settings from %s (subsystem %s)",
+        tostring(CONFIG.Version), settings.enabled and "ON" or "OFF", CONFIG.PercentPerSecond, CONFIG.CombatGraceSeconds,
+        tick, count(), settings.source, valid(subsystem) and "found" or "not found yet"))
     for _, entry in pairs(registry) do
         local tame = entry.actor
         if valid(tame) then

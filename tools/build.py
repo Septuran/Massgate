@@ -23,8 +23,9 @@ Steps:
   3. (--dev) rewrite our recipe so it is free and unlocked
   4. validate every row reference we introduce points at an existing row
   5. write the full tables to build/pak/Icarus/Content/Data/...
-  6. pack build/pak into build/Massgate_P.pak with repak (V11, zlib)
-  7. (--install) copy pak + Lua mod into the game, writing config.lua for the chosen mode
+  6. pack build/pak into build/Massgate_v<ver>_P.pak with repak (V11, zlib); then the same for
+     mod/data/tameregen_patches.json -> build/TameRegen_v<ver>_P.pak (Prospect Settings rows)
+  7. (--install) copy both paks + both Lua mods into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
 
@@ -41,10 +42,12 @@ INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
 REGEN_MOD = REPO / "mod" / "ue4ss" / "TameRegen"   # second mod: fast healing for tames on Follow
+REGEN_PATCHES = REPO / "mod" / "data" / "tameregen_patches.json"  # its Prospect Settings rows
 AISETUP_TABLE = "AI/D_AISetup.json"
 MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
+REGEN_PAK_ROOT = BUILD / "regen_pak"
 VERSION_FILE = REPO / "VERSION"
 
 
@@ -83,6 +86,8 @@ TRAIT_TABLE_OVERRIDES = {
     "EnergyFlow": "D_Energy",
     "ItemStaticData": "D_ItemsStatic",
     "SlotTemplate": "D_TagQueries",
+    "Stat": "D_Stats",
+    "StatCategory": "D_StatCategories",
 }
 
 
@@ -105,8 +110,8 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(text.replace("\n", "\r\n") + "\r\n", encoding="utf-8")
 
 
-def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
-    """Return {rel_path: (rel_path, table_json)} for every original table."""
+def load_base_tables(merge_installed: bool, quiet: bool = False) -> dict[str, tuple[Path, dict]]:
+    """Return {rel_path: (rel_path, table_json)} for every original table (fresh copies each call)."""
     tables: dict[str, tuple[Path, dict]] = {}
     for path in sorted(ORIGINAL.rglob("*.json")):
         rel = path.relative_to(ORIGINAL)
@@ -125,7 +130,8 @@ def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
             key = str(rel).replace("\\", "/")
             if key in tables:
                 tables[key] = (rel, read_json(path))
-                print(f"   overlay {key:45s} <- {pak_dir.name}")
+                if not quiet:
+                    print(f"   overlay {key:45s} <- {pak_dir.name}")
     return tables
 
 
@@ -249,40 +255,37 @@ def validate(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, d
     print(f"   validated {len(introduced)} rows, all references resolve")
 
 
-def pack(repak: Path, version: str) -> Path:
-    for old in BUILD.glob("Massgate*_P.pak"):
+def pack(repak: Path, version: str, pak_root: Path = PAK_ROOT, prefix: str = "Massgate") -> Path:
+    for old in BUILD.glob(f"{prefix}*_P.pak"):
         old.unlink()
-    out = BUILD / pak_name(version)
-    cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(PAK_ROOT), str(out)]
+    out = BUILD / f"{prefix}_v{version}_P.pak"
+    cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(pak_root), str(out)]
     subprocess.run(cmd, check=True)
     return out
 
 
-MARKER_ROOT = BUILD / "marker"
+def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: list[str]) -> None:
+    if pak_root.exists():
+        shutil.rmtree(pak_root)
+    for key in touched:
+        rel, table = tables[key]
+        write_json(pak_root / "Icarus" / "Content" / "Data" / rel, table)
+        print(f"   {key}")
 
 
-def marker_pak_name(version: str) -> str:
-    return f"TameRegen_v{version}_P.pak"
-
-
-def pack_marker(repak: Path, version: str) -> Path:
-    """A one-file pak for TameRegen so the game's "Mods Detected" dialog lists it with its
-    version. The Lua mod itself lives in the UE4SS Mods folder, which that dialog never sees.
-    The file inside sits under Content/Mods/, a path nothing in the game reads."""
-    if MARKER_ROOT.exists():
-        shutil.rmtree(MARKER_ROOT)
-    note = MARKER_ROOT / "Icarus" / "Content" / "Mods" / "TameRegen" / "TameRegen.txt"
-    note.parent.mkdir(parents=True)
-    note.write_text(
-        f"TameRegen {version}: marker pak only, so the Mods Detected dialog lists the mod.\n"
-        "The mod is the UE4SS Lua folder Icarus\\Binaries\\Win64\\ue4ss\\Mods\\TameRegen.\n",
-        encoding="utf-8",
-    )
-    for old in BUILD.glob("TameRegen*_P.pak"):
-        old.unlink()
-    out = BUILD / marker_pak_name(version)
-    subprocess.run([str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(MARKER_ROOT), str(out)], check=True)
-    return out
+def build_regen_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
+    """TameRegen's own pak: the Prospect Settings rows from tameregen_patches.json. Built on a fresh
+    copy of the base tables. Both paks replace whole tables and load alphabetically, so a table
+    touched by both would lose Massgate's rows; refuse that."""
+    tables = load_base_tables(merge_installed, quiet=True)
+    introduced = apply_patches(tables, read_json(REGEN_PATCHES))
+    touched = sorted({key for key, _ in introduced})
+    overlap = sorted(set(touched) & set(massgate_touched))
+    if overlap:
+        sys.exit(f"!! tameregen_patches.json and patches.json both touch {overlap}; move the rows into one file")
+    validate(tables, introduced)
+    write_tables(REGEN_PAK_ROOT, tables, touched)
+    return pack(repak, version, REGEN_PAK_ROOT, "TameRegen")
 
 
 def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str) -> None:
@@ -377,10 +380,10 @@ Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\W
 Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
 
 Also in this zip, optional and independent: TameRegen. Copy the folder "TameRegen" next to
-"Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\ (that pak holds one text file; it is
-only there so the "Mods Detected" dialog lists the mod). Tames set to Follow then heal 0.25 % of
-their maximum health per second while out of combat, scaled by their Nurtured Recovery talent.
-Only the host / server needs it.
+"Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\. Tames set to Follow then heal a share
+of their maximum health every second while out of combat, scaled by their Nurtured Recovery
+talent. Switch it on or off and set the rate in game: Escape -> Prospect Settings -> Creatures
+(host only). Only the host / server needs the Lua; everyone needs the pak.
 
 Source, docs and issues: https://github.com/Septuran/Massgate
 """
@@ -485,18 +488,14 @@ def main() -> int:
     print("4. validating references")
     validate(tables, introduced)
     print("5. writing tables")
-    if PAK_ROOT.exists():
-        shutil.rmtree(PAK_ROOT)
-    for key in touched:
-        rel, table = tables[key]
-        write_json(PAK_ROOT / "Icarus" / "Content" / "Data" / rel, table)
-        print(f"   {key}")
+    write_tables(PAK_ROOT, tables, touched)
     version = build_version(args.dev)
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
-    marker = pack_marker(args.repak, version)
-    print(f"   -> {marker} ({marker.stat().st_size:,} bytes)  [TameRegen marker: one text file]")
+    print("6b. TameRegen pak (Prospect Settings rows)")
+    marker = build_regen_pak(args.repak, args.merge_installed, version, touched)
+    print(f"   -> {marker} ({marker.stat().st_size:,} bytes)")
     classes, talents = mount_classes(tables), regen_talents(tables)
     if args.install:
         print("7. installing")

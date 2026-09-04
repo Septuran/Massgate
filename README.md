@@ -65,11 +65,17 @@ Regeneration" node in every companion tree): rank 4 gives the full 0.25 %/s, ran
 (`NoTalentFraction`). The talent rows are read from D_Talents at build time; the rank comes
 from the mount's replicated talent list at run time.
 
-`--install` installs it next to Massgate, plus a one-file marker pak
-`TameRegen_v<version>_P.pak` whose only purpose is to make the game's "Mods Detected" dialog
-list the mod with its version (that dialog only sees the Paks folder, never UE4SS mods).
+**In-game switches.** The mod's own pak, `TameRegen_v<version>_P.pak` built from
+`mod/data/tameregen_patches.json`, adds two rows to the game's Prospect Settings screen
+(Escape, then Prospect Settings, host only), under Creatures: an on/off toggle and the rate in
+percent of maximum health per minute (1 to 60, default 15 = 0.25 %/s). The game renders,
+saves and replicates those settings itself. The Lua reads them from the ProspectSubsystem and
+applies changes the moment the host presses Apply. A prospect without the rows uses the
+defaults. The same pak makes the "Mods Detected" dialog list TameRegen with its version.
+
+`--install` installs the Lua next to Massgate and the pak next to the Massgate pak.
 `--install --lua-only` refreshes just the Lua mods without touching either pak, which also
-works while the game runs (UE4SS reloads Lua with Ctrl+R). Tunables (`PercentPerSecond`, `CombatGraceSeconds`, `RequireFollow`,
+works while the game runs (UE4SS reloads Lua with Ctrl+R). Remaining tunables (`CombatGraceSeconds`, `RequireFollow`,
 `HealWhileRidden`) are documented in `mod/ue4ss/TameRegen/Scripts/config.lua`. With the
 console: `tameregen` lists the known tames and why each is or is not healing,
 `tameregen rate 1` changes the rate for the session, `tameregen scan` picks up tames that
