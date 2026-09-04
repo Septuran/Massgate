@@ -2,7 +2,7 @@
 -- folder (Version and the MountClasses list come from the game's D_AISetup table); the
 -- repo copy is the shipped default. Any key here overrides the CONFIG table in main.lua:
 --   PercentPerSecond   % of max health healed per second when a prospect has no rate setting
---                      yet (default 0.25). In game the rate comes from Escape -> Prospect
+--                      yet (default 0.25). In game the rate comes from Escape -> Custom World
 --                      Settings -> Creatures (percent per minute; 15 = 0.25 %/s).
 --   ProspectSettings   false ignores the Custom World Settings rows and uses this file only (default true)
 --   CombatGraceSeconds seconds without damage or a target before healing resumes (default 10)

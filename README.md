@@ -53,7 +53,7 @@ was verified on a dev build with real costs before they were switched off). Neve
 
 ## TameRegen (second mod in this repo)
 
-`mod/ue4ss/TameRegen/` is an independent UE4SS Lua mod, no pak needed: every tame set to
+`mod/ue4ss/TameRegen/` is an independent UE4SS Lua mod with a small pak of its own: every tame set to
 **Follow** heals **0.25 % of its maximum health per second** while out of combat (no attack
 target and no damage for 10 s), on top of the game's flat 10-50 HP/minute. A 2,200 HP mount
 is back to full in about 7 minutes instead of two hours. Mounts, pets and farm animals all
@@ -86,7 +86,8 @@ spawned before the mod loaded (one-off object walk, diagnostic only). Log prefix
 ```
 mod/data/patches.json     rows we add to the data tables
 mod/ue4ss/Massgate/       UE4SS Lua mod (Scripts/main.lua, enabled.txt)
-mod/ue4ss/TameRegen/      second UE4SS Lua mod: fast healing for tames on Follow (no pak)
+mod/ue4ss/TameRegen/      second UE4SS Lua mod: fast healing for tames on Follow
+mod/data/tameregen_patches.json  its Custom World Settings rows -> TameRegen_v<ver>_P.pak
 tools/build.py            applies patches, validates references, packs with repak
 tools/find_rows.py        search the extracted tables for a term
 docs/design.md            concept, lore, rules, row map, roadmap
