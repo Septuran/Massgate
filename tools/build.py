@@ -24,7 +24,7 @@ Steps:
   4. validate every row reference we introduce points at an existing row
   5. write the full tables to build/pak/Icarus/Content/Data/...
   6. pack build/pak into build/Massgate_v<ver>_P.pak with repak (V11, zlib); then the same for
-     mod/data/tameregen_patches.json -> build/TameRegen_v<ver>_P.pak (Prospect Settings rows)
+     mod/data/tameregen_patches.json -> build/TameRegen_v<ver>_P.pak (Custom World Settings rows)
   7. (--install) copy both paks + both Lua mods into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
 REGEN_MOD = REPO / "mod" / "ue4ss" / "TameRegen"   # second mod: fast healing for tames on Follow
-REGEN_PATCHES = REPO / "mod" / "data" / "tameregen_patches.json"  # its Prospect Settings rows
+REGEN_PATCHES = REPO / "mod" / "data" / "tameregen_patches.json"  # its Custom World Settings rows
 AISETUP_TABLE = "AI/D_AISetup.json"
 MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
@@ -274,7 +274,7 @@ def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: 
 
 
 def build_regen_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
-    """TameRegen's own pak: the Prospect Settings rows from tameregen_patches.json. Built on a fresh
+    """TameRegen's own pak: the Custom World Settings rows from tameregen_patches.json. Built on a fresh
     copy of the base tables. Both paks replace whole tables and load alphabetically, so a table
     touched by both would lose Massgate's rows; refuse that."""
     tables = load_base_tables(merge_installed, quiet=True)
@@ -382,7 +382,7 @@ Everyone in a multiplayer session needs both parts. Dedicated servers must run U
 Also in this zip, optional and independent: TameRegen. Copy the folder "TameRegen" next to
 "Massgate" in ue4ss\\Mods\\ and {marker} into Paks\\mods\\. Tames set to Follow then heal a share
 of their maximum health every second while out of combat, scaled by their Nurtured Recovery
-talent. Switch it on or off and set the rate in game: Escape -> Prospect Settings -> Creatures
+talent. Switch it on or off and set the rate in game: Escape -> Custom World Settings -> Creatures
 (host only). Only the host / server needs the Lua; everyone needs the pak.
 
 Source, docs and issues: https://github.com/Septuran/Massgate
@@ -493,7 +493,7 @@ def main() -> int:
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
-    print("6b. TameRegen pak (Prospect Settings rows)")
+    print("6b. TameRegen pak (Custom World Settings rows)")
     marker = build_regen_pak(args.repak, args.merge_installed, version, touched)
     print(f"   -> {marker} ({marker.stat().st_size:,} bytes)")
     classes, talents = mount_classes(tables), regen_talents(tables)

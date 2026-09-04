@@ -1,5 +1,5 @@
 {
-    "_comment": "Rows the TameRegen pak adds. TameRegen itself is Lua; these rows put its switches into the game's own Prospect Settings screen (escape menu -> Prospect Settings, host only): D_CustomGameStats rows are rendered by that screen automatically, each bound to a hidden world stat in D_Stats. The Lua reads the values from the ProspectSubsystem's settings array. Row names are prefixed QoL_ so a later collection of quality-of-life features can share the pak. This file must not touch any table mod/data/patches.json touches (both paks replace whole tables; build.py checks).",
+    "_comment": "Rows the TameRegen pak adds. TameRegen itself is Lua; these rows put its switches into the game's own Custom World Settings screen (escape menu -> Custom World Settings, host only): D_CustomGameStats rows are rendered by that screen automatically, each bound to a hidden world stat in D_Stats. The Lua reads the values from the ProspectSubsystem's settings array. Row names are prefixed QoL_ so a later collection of quality-of-life features can share the pak. This file must not touch any table mod/data/patches.json touches (both paks replace whole tables; build.py checks).",
     "tables": [
         {
             "table": "Stats/D_Stats.json",
@@ -35,7 +35,7 @@
         },
         {
             "table": "Stats/D_CustomGameStats.json",
-            "_comment": "The switches as they appear under Creatures in Prospect Settings. Bool = toggle, Int = stepper between MinIntValue and MaxIntValue.",
+            "_comment": "The switches as they appear under Creatures in Custom World Settings. Bool = toggle, Int = stepper between MinIntValue and MaxIntValue.",
             "add": [
                 {
                     "Name": "QoL_TameRegen",

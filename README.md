@@ -66,8 +66,8 @@ Regeneration" node in every companion tree): rank 4 gives the full 0.25 %/s, ran
 from the mount's replicated talent list at run time.
 
 **In-game switches.** The mod's own pak, `TameRegen_v<version>_P.pak` built from
-`mod/data/tameregen_patches.json`, adds two rows to the game's Prospect Settings screen
-(Escape, then Prospect Settings, host only), under Creatures: an on/off toggle and the rate in
+`mod/data/tameregen_patches.json`, adds two rows to the game's Custom World Settings screen
+(Escape, then Custom World Settings, host only), under Creatures: an on/off toggle and the rate in
 percent of maximum health per minute (1 to 60, default 15 = 0.25 %/s). The game renders,
 saves and replicates those settings itself. The Lua reads them from the ProspectSubsystem and
 applies changes the moment the host presses Apply. A prospect without the rows uses the

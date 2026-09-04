@@ -21,8 +21,8 @@
       * Runs only where the game has authority (solo, host, or a UE4SS dedicated server).
 
     In-game switches: the TameRegen pak adds an on/off toggle and the rate (% of max health per
-    minute) to the game's Prospect Settings screen (Escape -> Prospect Settings -> Creatures, host
-    only); see the Prospect Settings section below. The defaults above apply when a prospect has
+    minute) to the game's Custom World Settings screen (Escape -> Custom World Settings -> Creatures, host
+    only); see the Custom World Settings section below. The defaults above apply when a prospect has
     no such rows yet.
 
     Console (needs a console enabler): `tameregen` lists the known tames and their state,
@@ -53,7 +53,7 @@ local CONFIG = {
                                    -- base-class notification already covers subclasses)
     ScanClass           = "BP_Mount_Base_C", -- for the explicit `tameregen scan` command only
     -- In-game switches: the TameRegen pak adds two rows to D_CustomGameStats, which the game's
-    -- Prospect Settings screen (Escape -> Prospect Settings, host only) renders, saves with the
+    -- Custom World Settings screen (Escape -> Custom World Settings, host only) renders, saves with the
     -- prospect and replicates. We read them from the ProspectSubsystem's settings array
     -- (FCustomGameSetting = { SettingRowName, SettingValue }). Rows absent = defaults above.
     ProspectSettings     = true,
@@ -185,7 +185,7 @@ local function talentFactor(rank, row)
 end
 
 ------------------------------------------------------------------------------------------
--- Prospect Settings
+-- Custom World Settings
 ------------------------------------------------------------------------------------------
 
 local tick = 0           -- one per TickMs; every timestamp in this file is in ticks
@@ -240,7 +240,7 @@ local function readSettings(context)
     if not ok then dbg("settings read failed: %s", tostring(err)); return end
     local newEnabled = enabled == nil and true or enabled
     local newRate = settings.manualRate and CONFIG.PercentPerSecond or (rate and rate / 60 or DEFAULT_RATE)
-    local source = (enabled == nil and rate == nil) and "defaults (rows not in this prospect yet)" or "Prospect Settings"
+    local source = (enabled == nil and rate == nil) and "defaults (rows not in this prospect yet)" or "Custom World Settings"
     if newEnabled ~= settings.enabled or newRate ~= CONFIG.PercentPerSecond or source ~= settings.source then
         log("settings: %s, %.3f%% of max health per second (%s)", newEnabled and "ON" or "OFF", newRate, source)
     end
@@ -255,7 +255,7 @@ if CONFIG.ProspectSettings then
         function(self)
             subsystem = valid(self) and self or subsystem
             settings.dirty, settings.manualRate = true, false
-            dbg("Prospect Settings applied; re-reading")
+            dbg("Custom World Settings applied; re-reading")
         end)
     if ok then dbg("hooked %s", CONFIG.SubsystemSetHook)
     else log("could not hook %s (%s); settings still refresh every %d ticks", CONFIG.SubsystemSetHook, tostring(err), CONFIG.SettingsRefreshTicks) end
@@ -266,7 +266,7 @@ end
 --                          rank, row, factor, talentAt (tick of the last talent read) }
 ------------------------------------------------------------------------------------------
 
-local registry = {}      -- (tick counter is declared above the Prospect Settings section)
+local registry = {}      -- (tick counter is declared above the Custom World Settings section)
 
 local function register(actor, source)
     if not valid(actor) then return end
@@ -305,7 +305,7 @@ end
 
 local function eligible(entry, tame, state)
     if not hasAuthority(tame) then return false, "no authority" end
-    if not settings.enabled then return false, "off in Prospect Settings" end
+    if not settings.enabled then return false, "off in Custom World Settings" end
     local okAlive, alive = pcall(function() return state:IsAlive() end)
     if not okAlive or alive ~= true then return false, "dead" end
     if not isFollowing(tame) then return false, "not on Follow" end
@@ -400,7 +400,7 @@ pcall(RegisterConsoleCommandHandler, "tameregen", function(FullCommand, Paramete
     if Parameters[1] == "rate" and tonumber(Parameters[2]) then
         CONFIG.PercentPerSecond = tonumber(Parameters[2])
         settings.manualRate = true
-        Ar:Log(string.format("[TameRegen] rate set to %.2f%% of max health per second (until Prospect Settings are applied again)", CONFIG.PercentPerSecond))
+        Ar:Log(string.format("[TameRegen] rate set to %.2f%% of max health per second (until Custom World Settings are applied again)", CONFIG.PercentPerSecond))
         log("rate set to %.2f%%/s from the console", CONFIG.PercentPerSecond)
         return true
     end
