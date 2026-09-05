@@ -37,7 +37,12 @@ Two parts ship together and both are required:
    ```
    `--merge-installed` layers the tables from other mod paks you have installed (unpacked
    into `data/installed/<pakname>/`) under ours, so our full-table replacement does not
-   undo them. `--install` copies the pak into the game's mods folder.
+   undo them. The merge is row by row: rows a mod adds are taken; rows that differ from the
+   fresh game table are taken only if they also differ from the previous game version
+   (`data/previous/`, kept by `--extract`), because a row equal to the old game row is just
+   the mod's stale copy of something the game update changed (2026-09-05: Gold Ore lost its
+   icon that way). Without a baseline, differing rows are taken and listed.
+   `--install` copies the pak into the game's mods folder.
    `--install` also copies the Lua mod into `Icarus\Binaries\Win64\ue4ss\Mods\Massgate`
    and writes its `config.lua` for the chosen mode.
 
