@@ -184,15 +184,14 @@ def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict
         # Three-way merge per field: start from the fresh game row, apply only the fields the mod
         # actually changed relative to the previous game version. (Deyvid's AIO changes Weight and
         # MaxStack on nearly every item; a whole-row comparison would drag its stale Icon along.)
+        # A field the mod's row simply lacks is not a change: modding tools drop fields (Different
+        # Pouch's Kiwi bait row has no Icon), and deleting a field is never what a mod means.
         merged = dict(fresh)
-        for field in set(mod_row) | set(prev):
-            if row_json(mod_row.get(field)) != row_json(prev.get(field)):
+        for field in mod_row:
+            if row_json(mod_row[field]) != row_json(prev.get(field)):
                 if row_json(fresh.get(field)) != row_json(prev.get(field)):
                     conflicts.append(f"{name}.{field}")  # game and mod both changed it; mod wins
-                if field in mod_row:
-                    merged[field] = mod_row[field]
-                else:
-                    merged.pop(field, None)
+                merged[field] = mod_row[field]
         if row_json(merged) == row_json(fresh):
             skipped += 1  # only stale copies of rows the game has since changed
         else:
