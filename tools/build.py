@@ -502,6 +502,34 @@ def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], t
         data_dir.mkdir(parents=True, exist_ok=True)
 
 
+SAVES = Path.home() / "AppData" / "Local" / "Icarus" / "Saved" / "PlayerData"
+SAVE_BACKUPS_KEPT = 10
+
+
+def backup_saves() -> None:
+    """Copy every prospect save folder (all Steam ids) to build/save-backup-<timestamp>/ before an
+    install touches the game, and keep only the newest SAVE_BACKUPS_KEPT backups. Table paks can
+    change what a save means (2026-09-06: an un-merged install broke the pouch mod's inventories),
+    so every install starts with a copy to fall back on."""
+    import datetime
+    if not SAVES.exists():
+        print(f"   saves    -> not found at {SAVES}; nothing backed up")
+        return
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = BUILD / f"save-backup-{stamp}"
+    files = 0
+    for player_dir in SAVES.iterdir():
+        prospects = player_dir / "Prospects"
+        if prospects.is_dir():
+            dest = target / player_dir.name
+            shutil.copytree(prospects, dest)
+            files += sum(1 for _ in dest.iterdir())
+    print(f"   saves    -> {target}  ({files} files)")
+    backups = sorted(p for p in BUILD.glob("save-backup-*") if p.is_dir())
+    for old in backups[:-SAVE_BACKUPS_KEPT]:
+        shutil.rmtree(old)
+
+
 def install_lua_mod(source: Path, write: callable) -> Path:
     target = UE4SS_MODS / source.name
     if target.exists():
@@ -564,6 +592,7 @@ def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
+    backup_saves()
     stale: list[str] = []
     for prefix, new in (("Massgate", pak), ("Fieldkit", fk_pak)):
         if new is None:

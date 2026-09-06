@@ -112,7 +112,10 @@ settingsChanged, console, status }` (see the header of `main.lua`), its id in
 switch, bound to a hidden world stat row in `D_Stats`, names prefixed `Fieldkit_`).
 
 `--install` installs the Lua next to Massgate and the pak next to the Massgate pak, and
-removes the old TameRegen copies. Always pass `--merge-installed` when installing on a game
+removes the old TameRegen copies. Every install first copies all prospect saves to
+`build/save-backup-<timestamp>/` (the newest ten are kept), because a table pak can change
+what a save means; restore by copying a folder back over
+`%LOCALAPPDATA%\Icarus\Saved\PlayerData\<id>\Prospects` with the game closed. Always pass `--merge-installed` when installing on a game
 that has other table mods (both paks replace whole tables and load after most mods
 alphabetically; an un-merged install silently reverts those mods' rows). `--install
 --lua-only` refreshes just the Lua mods without touching either pak, which also works while
