@@ -60,6 +60,7 @@ local CONFIG = {
     HideComponents     = { "DeployableSK", "SM_DEP_Crate_SML_Metal", "SM_DEP_Crate_SML_Metal1" },
     HopperSlots        = 6,
     RegisterPerTick    = 400,     -- building pieces taken off the spawn queue per tick
+    SettleTicks        = 2,       -- ticks a spawned piece waits in the queue before it is touched
     PruneTicks         = 30,
     SettingEnabledRow  = "Fieldkit_Scour",
     SettingIntervalRow = "Fieldkit_ScourInterval",
@@ -99,24 +100,51 @@ local function distanceM(a, b)
     return math.sqrt(dx * dx + dy * dy + dz * dz) / 100
 end
 
+local function countBuildings()
+    local n = 0
+    for _ in pairs(buildings) do n = n + 1 end
+    return n
+end
+
+-- Only placed pieces in the level: the spawn notification also fires for class defaults, reinstanced
+-- classes, placement ghosts and pieces the game replaces, some of which are gone again within a
+-- tick. Touching one of those is a native crash, not a Lua error, so filter by name first.
+local function isLevelActor(name)
+    if not name:find(":PersistentLevel.", 1, true) then return false end
+    if name:find("Default__", 1, true) or name:find("REINST_", 1, true) or name:find("TRASH", 1, true)
+        or name:find("Preview", 1, true) or name:find("Ghost", 1, true) then return false end
+    return true
+end
+
 local function registerBuilding(actor)
     if not valid(actor) then return end
     local name = core.fullName(actor)
-    if buildings[name] or name:find("Default__", 1, true) then return end
+    if buildings[name] or not isLevelActor(name) then return end
     local loc = locationOf(actor)
     if not loc then return end
     buildings[name] = { actor = actor, loc = loc }
     buildingsGen = buildingsGen + 1
 end
 
+-- Queued actors wait SettleTicks before they are touched, so construction has finished and
+-- short-lived ones are already invalid (and skipped) by then.
 local function drainPending()
-    local n = 0
-    while #pending > 0 and n < CONFIG.RegisterPerTick do
-        local actor = table.remove(pending)
-        pcall(registerBuilding, actor)
-        n = n + 1
+    local n, tick = 0, core.tick()
+    local keep = {}
+    for i = #pending, 1, -1 do
+        local item = pending[i]
+        if n < CONFIG.RegisterPerTick and tick - item.tick >= CONFIG.SettleTicks then
+            pending[i] = nil
+            pcall(registerBuilding, item.actor)
+            n = n + 1
+        end
     end
-    if n > 0 then L.dbg("registered %d building piece(s), %d queued, %d total", n, #pending, (function() local c = 0; for _ in pairs(buildings) do c = c + 1 end; return c end)()) end
+    if n > 0 then
+        -- compact the queue (entries were removed from the end first, but not only from the end)
+        for _, item in ipairs(pending) do keep[#keep + 1] = item end
+        pending = keep
+        L.dbg("registered %d building piece(s), %d queued, %d total", n, #pending, countBuildings())
+    end
 end
 
 local function accumulationOf(rec)
@@ -133,12 +161,6 @@ local function readBuildup(rec)
     pcall(function() amount = tonumber(comp.Amount) end)
     pcall(function() kind = tonumber(comp.AccumulationType) end)
     return amount, kind
-end
-
-local function countBuildings()
-    local n = 0
-    for _ in pairs(buildings) do n = n + 1 end
-    return n
 end
 
 ------------------------------------------------------------------------------------------
@@ -323,6 +345,7 @@ end
 local function pulse(rec, force)
     rec.lastPulse = core.tick()
     rec.pulses = rec.pulses + 1
+    L.dbg("pulse %d starting (%s)", rec.pulses, force and "forced" or "timer")
     local free = CONFIG.DevMode
     local powered = free or not CONFIG.RequirePower or isPowered(rec.actor)
     if powered ~= rec.powered then
@@ -422,7 +445,9 @@ function F.init(coreRef, config)
     L = core.logger(F.id)
     L.log("pulse every %d s, range %d m, %d pieces per cartridge%s", CONFIG.IntervalSeconds, CONFIG.RadiusMetres,
         CONFIG.PiecesPerCartridge, CONFIG.DevMode and "  [DEV MODE: no power, no cartridges]" or "")
-    pcall(NotifyOnNewObject, CONFIG.BuildingClass, function(actor) pending[#pending + 1] = actor end)
+    pcall(NotifyOnNewObject, CONFIG.BuildingClass, function(actor)
+        pending[#pending + 1] = { actor = actor, tick = core.tick() }
+    end)
     pcall(NotifyOnNewObject, CONFIG.BaseClass, function(actor)
         ExecuteWithDelay(500, function()
             ExecuteInGameThread(function() pcall(registerScourer, actor, "spawn") end)
@@ -435,7 +460,9 @@ function F.settingsChanged() applySettings() end
 function F.rescan(_, reason)
     local okB, list = pcall(FindAllOf, CONFIG.BuildingScanClass)
     local nb = 0
-    if okB and list then for _, actor in ipairs(list) do pending[#pending + 1] = actor; nb = nb + 1 end end
+    if okB and list then
+        for _, actor in ipairs(list) do pending[#pending + 1] = { actor = actor, tick = core.tick() }; nb = nb + 1 end
+    end
     local okS, crates = pcall(FindAllOf, CONFIG.ScanClass)
     local ns = 0
     if okS and crates then for _, actor in ipairs(crates) do registerScourer(actor, "scan:" .. reason); ns = ns + 1 end end
