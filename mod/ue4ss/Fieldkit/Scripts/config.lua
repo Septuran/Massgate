@@ -17,6 +17,19 @@
 --   TalentScaling        "reward" = rank's talent bonus / top rank's bonus (8/25/50/100 %),
 --                        "rank" = rank / 4 (default "reward"); rank 4 is always the full rate
 --   NoTalentFraction     share of the rate for a tame without the talent (default 0 = game regen only)
+--
+-- FeatureConfig.stow (in game: Escape -> Custom World Settings -> Misc wins over these):
+--   RangeMetres          deposit range when the prospect has no range row applied (default 30)
+--   Learn                opening a chest adds its contents to its pins (default true)
+--   Keys                 { Deposit = { Key = "E", Modifiers = { "SHIFT" } }, Pin = { Key = "P", Modifiers = { "SHIFT" } } }
+--                        UE4SS key names (F8, HOME, NUM_ZERO, ...) and modifiers SHIFT / CONTROL / ALT
+--   TitleBar             show the pins in the chest window title (default true)
+--   PinButton            add a "Pin contents" button to the chest window (default true)
+--   Tooltip              show the pins in the in-world tooltip when looking at a chest (default true)
+--   ExcludedContainers   container class names the deposit never fills, e.g. { "BP_Deep_Freeze_C" } (default none)
+--   ItemNames            item row -> display name; written by build.py from D_ItemsStatic/D_Itemable
+-- Pins are saved per prospect in <ue4ss>/FieldkitData/stow/<prospect id>.lua (outside the mod
+-- folder, so reinstalling keeps them; delete a file to forget that prospect's pins).
 return {
     Version = "dev",
 }

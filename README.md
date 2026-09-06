@@ -78,6 +78,21 @@ Features:
   Scales with the creature talent **Nurtured Recovery**: rank 4 gives the full rate, ranks
   1-3 give 8 / 25 / 50 % of it, no talent gives nothing (`NoTalentFraction`). Mounts, pets
   and farm animals all count (everything derived from `BP_Mount_Base_C`).
+- **stow** (Misc section): one key puts the backpack away. Every storage container can be
+  **pinned** to a set of item types: open the chest, put in what belongs there and press
+  **Shift+P** (or the "Pin contents" button the mod adds to the chest window); the chest is
+  now pinned to exactly the types it holds, and pinning an empty chest clears it. With
+  **learning** on (default) opening a chest also adds its contents to its pins, so a chest
+  that crafting emptied still attracts its item. **Shift+E** then moves every backpack stack
+  whose type is pinned on a chest within range (default 30 m) into that chest, nearest first,
+  spilling into the next pinned chest when one is full; the hotbar is never touched. The
+  pins show in the chest window title, in the in-world tooltip when you look at the chest,
+  and in the message lines after pinning and depositing. Pins are saved per prospect in
+  `<ue4ss>\FieldkitData\stow\`, keyed by the chest's class and position (pick a chest up and
+  place it again and it starts unpinned). Moves go through the game's own server-side
+  shift-item action, so it works as a client too. If NearbyCrafting is installed, set
+  `DepositEnabled = false` in its ini (its Quick Deposit also sits on Shift+E) and keep its
+  nearby crafting.
 
 Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
 settingsChanged, console, status }` (see the header of `main.lua`), its id in
@@ -90,8 +105,11 @@ touching either pak, which also works while the game runs (UE4SS reloads Lua wit
 Per-feature tunables are documented in `mod/ue4ss/Fieldkit/Scripts/config.lua`. Console:
 `fieldkit` (overview), `fieldkit tames`, `fieldkit tameregen` (per-tame health and why each
 is or is not healing), `fieldkit tameregen rate <percent per second>` (session override),
-`fieldkit scan` (one-off object walk to pick up tames that spawned before the mod loaded,
-diagnostic only). Log prefixes `[Fieldkit]` and `[Fieldkit:<feature>]`.
+`fieldkit stow` (containers in range and their pins), `fieldkit stow pins`, `fieldkit stow
+deposit`, `fieldkit stow pin|unpin <item row>` and `fieldkit stow clear` (on the open chest),
+`fieldkit stow names <text>` (item rows by display name), `fieldkit scan` / `fieldkit stow
+scan` (one-off object walks to pick up actors that spawned before the mod loaded, diagnostic
+only). Log prefixes `[Fieldkit]` and `[Fieldkit:<feature>]`.
 
 ## Layout
 

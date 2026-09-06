@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -433,11 +434,45 @@ def regen_talents(tables: dict[str, tuple[Path, dict]]) -> dict[str, list[int]]:
     return found
 
 
-def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]]) -> None:
+ITEMS_TABLE = "Items/D_ItemsStatic.json"
+ITEMABLE_TABLE = "Traits/D_Itemable.json"
+LOCTEXT_RE = re.compile(r'^(?:NSLOCTEXT\("[^"]*",\s*"[^"]*",\s*|INVTEXT\()"((?:[^"\\]|\\.)*)"\)$')
+
+
+def display_text(value: object) -> str:
+    """The user-visible string of an FText export ('NSLOCTEXT("ns", "key", "Fiber")' or 'INVTEXT("x")')."""
+    text = str(value or "")
+    match = LOCTEXT_RE.match(text)
+    return match.group(1).encode().decode("unicode_escape") if match else text
+
+
+def item_names(tables: dict[str, tuple[Path, dict]]) -> dict[str, str]:
+    """Item row name -> display name (D_ItemsStatic.Itemable -> D_Itemable.DisplayName), so Fieldkit
+    can show 'Wood' instead of 'Wood' row names or 'Item_Fiber' without struct-passing library calls."""
+    _, itemable = tables[ITEMABLE_TABLE]
+    names = {row["Name"]: display_text(row.get("DisplayName")) for row in itemable.get("Rows", [])}
+    _, items = tables[ITEMS_TABLE]
+    found: dict[str, str] = {}
+    for row in items.get("Rows", []):
+        name = names.get(str(row.get("Itemable", {}).get("RowName", "")))
+        if name:
+            found[row["Name"]] = name
+    if len(found) < 100:
+        sys.exit("!! fewer than 100 item display names found in D_ItemsStatic/D_Itemable; the table format changed?")
+    return found
+
+
+def lua_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ") + '"'
+
+
+def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]],
+                          items: dict[str, str]) -> None:
     lua_classes = "".join(f'        "{c}",\n' for c in classes)
     lua_talents = "".join(
         f'        ["{name}"] = {{ {", ".join(str(v) for v in ranks)} }},\n' for name, ranks in sorted(talents.items())
     )
+    lua_items = "".join(f"        [{lua_string(row)}] = {lua_string(name)},\n" for row, name in sorted(items.items()))
     (scripts_dir / "config.lua").write_text(
         "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
         "-- Tunables are documented in the repo's config.lua; keys deep-merge into main.lua's CONFIG.\n"
@@ -456,10 +491,20 @@ def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], t
         f"{''.join('        ' + line + chr(10) for line in lua_talents.splitlines())}"
         "            },\n"
         "        },\n"
+        "        stow = {\n"
+        "            -- item row -> display name, from D_ItemsStatic/D_Itemable (chest titles, messages)\n"
+        "            ItemNames = {\n"
+        f"{''.join('        ' + line + chr(10) for line in lua_items.splitlines())}"
+        "            },\n"
+        "        },\n"
         "    },\n"
         "}\n",
         encoding="utf-8",
     )
+    # Pins and other per-prospect files live outside the mod folder (install replaces that folder).
+    data_dir = scripts_dir.parent.parent.parent / "FieldkitData" / "stow"
+    if scripts_dir.parent.parent == UE4SS_MODS:
+        data_dir.mkdir(parents=True, exist_ok=True)
 
 
 def install_lua_mod(source: Path, write: callable) -> Path:
@@ -498,7 +543,7 @@ Source, docs and issues: https://github.com/Septuran/Massgate
 
 
 def package(pak: Path, fk_pak: Path, dev: bool, channels: list[str], version: str, classes: list[str],
-            talents: dict[str, list[int]]) -> Path:
+            talents: dict[str, list[int]], items: dict[str, str]) -> Path:
     """Build the distributable zip: both paks, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
     staging = release_dir / f"Massgate_v{version}"
@@ -510,7 +555,7 @@ def package(pak: Path, fk_pak: Path, dev: bool, channels: list[str], version: st
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
     shutil.copytree(FIELDKIT_MOD, staging / FIELDKIT_MOD.name)
-    write_fieldkit_config(staging / FIELDKIT_MOD.name / "Scripts", version, classes, talents)
+    write_fieldkit_config(staging / FIELDKIT_MOD.name / "Scripts", version, classes, talents, items)
     (staging / "README.txt").write_text(
         RELEASE_README.format(version=version, pak=pak.name, fk_pak=fk_pak.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
@@ -518,7 +563,7 @@ def package(pak: Path, fk_pak: Path, dev: bool, channels: list[str], version: st
 
 
 def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str], version: str,
-            classes: list[str], talents: dict[str, list[int]]) -> None:
+            classes: list[str], talents: dict[str, list[int]], items: dict[str, str]) -> None:
     """Copy the paks (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
@@ -555,8 +600,9 @@ def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str
 
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
-    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents))
-    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents)")
+    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents, items))
+    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents, "
+          f"{len(items)} item names)")
     if stale:
         sys.exit(
             f"!! stale pak(s) still installed: {', '.join(stale)}. Close the game, then run:\n"
@@ -592,7 +638,8 @@ def main() -> int:
         patches = read_json(PATCHES)
         version = build_version(args.dev)
         print(f"installing Lua mods only, version {version}")
-        install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables))
+        install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables),
+                item_names(tables))
         return 0
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
@@ -625,13 +672,13 @@ def main() -> int:
     print("6b. Fieldkit pak (Custom World Settings rows)")
     fk_pak = build_fieldkit_pak(args.repak, args.merge_installed, version, touched)
     print(f"   -> {fk_pak} ({fk_pak.stat().st_size:,} bytes)")
-    classes, talents = mount_classes(tables), regen_talents(tables)
+    classes, talents, items = mount_classes(tables), regen_talents(tables), item_names(tables)
     if args.install:
         print("7. installing")
-        install(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents)
+        install(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents, items)
     if args.package:
         print("8. packaging")
-        archive = package(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents)
+        archive = package(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents, items)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 

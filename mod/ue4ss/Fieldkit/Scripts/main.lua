@@ -8,6 +8,8 @@
     Features (Scripts/features/<id>.lua, listed in CONFIG.Features):
       * tameregen : tames set to Follow heal a share of their maximum health every second while out
                     of combat, scaled by their Nurtured Recovery talent rank.
+      * stow      : pin chests to item types (open the chest, Shift+P) and put the backpack away
+                    into the pinned chests nearby with one key (Shift+E).
 
     The core owns:
       * the tick (once a second on the game thread), with every feature call wrapped in pcall;
@@ -34,7 +36,7 @@
 
 local CONFIG = {
     TickMs               = 1000,
-    Features             = { "tameregen" },
+    Features             = { "tameregen", "stow" },
     FeatureConfig        = {},       -- per-feature overrides, e.g. FeatureConfig.tameregen.PercentPerSecond
     -- Custom World Settings
     CustomWorldSettings  = true,     -- false: features run on their own defaults only
@@ -229,6 +231,25 @@ local function anyTame()
     return nil
 end
 
+-- Any world-bound object, for engine calls that need a world context (subsystem and player
+-- lookups). Features hand in the actors they register (containers, ...); tames work too.
+local contextObject = nil
+
+local function anyContext()
+    if valid(contextObject) then return contextObject end
+    contextObject = anyTame()
+    return contextObject
+end
+
+-- Where features keep files that must survive a reinstall (build.py replaces the mod folder):
+-- <ue4ss>/FieldkitData/, next to the Mods folder.
+local function dataDir()
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", ""):gsub("\\", "/")
+    local ue4ss = source:match("^(.*)/[Mm]ods/[^/]+/Scripts/[^/]+$")
+    if ue4ss then return ue4ss .. "/FieldkitData" end
+    return "ue4ss/FieldkitData" -- relative to the game's Binaries/Win64 working directory
+end
+
 local function watch(classPath)
     local ok, err = pcall(NotifyOnNewObject, classPath, function(actor)
         -- Give the actor a moment to finish construction before we touch it.
@@ -259,7 +280,40 @@ local core = {
     end,
     settingsSource = function() return settings.source end,
     tames = { all = function() return registry end, count = countTames },
+    dataDir = dataDir(),
+    setContext = function(obj) if not valid(contextObject) and valid(obj) then contextObject = obj end end,
+    anyContext = anyContext,
+    subsystem = function() return prospectSubsystem(anyContext()) end,
 }
+
+-- The local player's controller (player 0), through the engine's GameplayStatics.
+function core.controller()
+    local controller = nil
+    pcall(function()
+        local gs = StaticFindObject("/Script/Engine.Default__GameplayStatics")
+        local ctx = anyContext()
+        if valid(gs) and ctx then controller = gs:GetPlayerController(ctx, 0) end
+    end)
+    return valid(controller) and controller or nil
+end
+
+-- Backend id of the loaded prospect (its save), or nil before one is known.
+function core.prospectId()
+    local sub = prospectSubsystem(anyContext())
+    if not sub then return nil end
+    local ok, id = pcall(function() return sub.ActiveProspect.ProspectID:ToString() end)
+    if ok and id and id ~= "" then return id end
+    return nil
+end
+
+-- A line in the local player's message area (chat/log), plus UE4SS.log.
+function core.tell(text)
+    log("-> %s", text)
+    pcall(function()
+        local controller = core.controller()
+        if controller then controller:AddLocalMessage("[Fieldkit] " .. text) end
+    end)
+end
 
 function core.logger(id)
     local prefix = "[Fieldkit:" .. id .. "] "
@@ -305,7 +359,7 @@ log("Fieldkit v%s loaded with %d feature(s)", tostring(CONFIG.Version), #feature
 local function coreTick()
     tick = tick + 1
     pruneTames()
-    readSettings(anyTame())
+    readSettings(anyContext())
     local changed = settings.changed
     settings.changed = false
     for _, f in ipairs(features) do

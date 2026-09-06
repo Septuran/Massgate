@@ -30,6 +30,45 @@
                         "RowName": "World"
                     },
                     "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_Stow_?",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_Stow_?-Title\", \"Stow (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_Stow_?-PositiveDescription\", \"Put backpack items away into pinned chests with one key\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_StowRange_+",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_StowRange_+-Title\", \"Stow Range (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_StowRange_+-PositiveDescription\", \"{0} m\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_StowLearn_?",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_StowLearn_?-Title\", \"Stow Learning (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_StowLearn_?-PositiveDescription\", \"Opening a chest pins its contents\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
                 }
             ]
         },
@@ -63,6 +102,52 @@
                     },
                     "MinIntValue": 1,
                     "MaxIntValue": 60
+                }
+            ]
+        },
+        {
+            "table": "Stats/D_CustomGameStats.json",
+            "_comment": "Feature stow, Misc section. Same table as above: build.py merges the add lists.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Stow",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_Stow-DisplayName\", \"Fieldkit: Stow\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_Stow-Description\", \"Pin chests to item types (open the chest, Shift+P or the Pin button) and press Shift+E to put every matching backpack stack into the pinned chests nearby. Off disables the deposit key; pins are kept.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Bool",
+                    "DefaultValue": 1,
+                    "Stat": {
+                        "RowName": "Fieldkit_Stow_?"
+                    },
+                    "MaxIntValue": 1
+                },
+                {
+                    "Name": "Fieldkit_StowRange",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_StowRange-DisplayName\", \"Fieldkit: Stow Range\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_StowRange-Description\", \"How far from you a pinned chest may be for the deposit key to fill it, in metres.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Int",
+                    "DefaultValue": 30,
+                    "Stat": {
+                        "RowName": "Fieldkit_StowRange_+"
+                    },
+                    "MinIntValue": 5,
+                    "MaxIntValue": 100
+                },
+                {
+                    "Name": "Fieldkit_StowLearn",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_StowLearn-DisplayName\", \"Fieldkit: Stow Learning\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_StowLearn-Description\", \"Opening a chest adds whatever it holds to its pins, so chests you use normally keep attracting those items even after crafting emptied them. Off: only the pin key and button change pins.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Bool",
+                    "DefaultValue": 1,
+                    "Stat": {
+                        "RowName": "Fieldkit_StowLearn_?"
+                    },
+                    "MaxIntValue": 1
                 }
             ]
         }
