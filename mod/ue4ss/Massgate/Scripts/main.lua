@@ -41,17 +41,20 @@ local CONFIG = {
     Channels             = { "Red", "Green", "Blue" },  -- overridden from config.lua
     ExoticsRow           = "MetaResource",
     BufferSlots          = 4,                          -- slots 0-3 hold Exotics
-    ModuleSlot           = 4,
+    ModuleSlot           = 4,                          -- first module bay
+    ModuleSlots          = { 4, 6 },                   -- both bays accept any Massgate module
+    AmplifierRow         = "Massgate_Amplifier",
     TuningSlot           = 5,
     CrystalRowPrefix     = "Massgate_Crystal_",        -- Massgate_Crystal_<Colour>
     CouplerRow           = "Massgate_Coupler",
-    CouplerExtraExotics  = 3,
     StackProperty        = 7,                          -- EDynamicItemProperties::ItemableStack
     RequirePower         = true,
     DevAnchorsPowered    = false,
     InterferenceRadiusCm = 50000,                      -- 500 m
     CooldownSeconds      = 20,
-    ChargeSeconds        = 3,
+    ChargeSeconds        = 3.5,                        -- transit fires 3.5 s into the 5 s charge sound
+    ChargeFollowsSound   = false,
+    ArrivalSoundDelayMs  = 500,                        -- let the listener arrive before the sound                      -- true: use the Charge event's length instead
     FieldRadiusCm        = 800,
     BringTames           = true,
     FollowingTamesOnly   = true,
@@ -62,13 +65,30 @@ local CONFIG = {
     ArrivalLiftCm        = 100,
     TraceUpCm            = 300,
     TraceDownCm          = 800,
-    ExoticsOutbound      = 5,
+    ExoticsOutbound      = 8,                          -- flat; the coupler adds nothing
     ExoticsInbound       = 0,
-    -- Looks: the crate actor draws its own box through components we cannot read from Lua, so we
-    -- hide every mesh component except the base class' DeployableSM slot and put our mesh there.
+    -- Power relay: a coupled Anchor pushes energy down the colour channel to its Resonator's grid.
+    Relay                = true,
+    RelayMs              = 5000,                       -- registry only, a few property reads per gate
+    RelayResource        = "Energy",                   -- FIcarusResourcesEnum row
+    RelayBaseRate        = 5000,                       -- Phase Coupler alone
+    RelayUpgradedRate    = 20000,                      -- with a Channel Amplifier in the other bay
+    -- Looks: the crate actor draws its own box through its DeployableSK skeletal mesh (plus two
+    -- static-mesh crate parts). Hide those by name and put our mesh in the DeployableSM slot.
+    -- (Walking the whole object table to find them froze the game for ~2 s per gate.)
+    HideComponents = { "DeployableSK", "SM_DEP_Crate_SML_Metal", "SM_DEP_Crate_SML_Metal1" },
     Meshes = {
         Anchor    = "/Game/ASS/DEP/DEP_OEI_LandingPad/SM_DEP_OEI_LandingPad_T4.SM_DEP_OEI_LandingPad_T4",
         Resonator = "/Game/ASS/DEP/SM_DEP_Laser_Uplink.SM_DEP_Laser_Uplink",
+    },
+    -- Sounds: FMOD events shipped with the game (object paths). Many events are silent when fired
+    -- as plain one-shots (they wait for a game parameter); these were auditioned in game with
+    -- `massgate sfx <name>` and are known to play.
+    SoundsEnabled        = true,
+    Sounds = {
+        Charge  = "/Game/FMOD/Events/SFX/Mission/SFX_ORBITAL_LASER_SCAN_INTENSE.SFX_ORBITAL_LASER_SCAN_INTENSE", -- 5.05 s
+        Transit = nil, -- by request, no sound at transit: the charge sound covers the whole sequence
+        Fail    = "/Game/FMOD/Events/SFX/Deployable/Survey_Scanner/SFX_SURVEY_TRANSMITTER_ON.SFX_SURVEY_TRANSMITTER_ON",
     },
     MapIcons             = true,
     MapIconComponentClass = "/Script/Icarus.IcarusMapIconComponent",
@@ -98,7 +118,9 @@ if DEV_MODE then
     CONFIG.DevAnchorsPowered    = true
     CONFIG.CooldownSeconds      = 0
     CONFIG.InterferenceRadiusCm = 1000 -- 10 m
-    log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference")
+    CONFIG.ExoticsOutbound      = 0    -- trips are free: the buffer was verified working 2026-09-02
+    CONFIG.ExoticsInbound       = 0
+    log("DEV MODE: anchors always powered, resonators need power or a coupler, no cooldown, 10 m interference, free trips")
 elseif not okCfg then
     log("config.lua not found or invalid (%s); using shipped defaults", tostring(userConfig))
 end
@@ -112,6 +134,16 @@ end
 
 local function valid(obj)
     return obj ~= nil and obj:IsValid()
+end
+
+-- UE4SS hands back RemoteUnrealParam wrappers for array elements and some struct fields;
+-- the real value is behind :get(). Plain values pass through.
+local function unwrap(v)
+    if type(v) == "userdata" then
+        local ok, inner = pcall(function() return v:get() end)
+        if ok and inner ~= nil then return inner end
+    end
+    return v
 end
 
 local function locationOf(actor)
@@ -201,11 +233,11 @@ local function panelOf(gate)
         local targets = { [key] = true }
         local cls = StaticFindObject("/Script/Icarus.InventoryComponent")
         local comps = gate:K2_GetComponentsByClass(cls)
-        for i = 1, #comps do targets[fullName(comps[i])] = true end
+        for i = 1, #comps do targets[fullName(unwrap(comps[i]))] = true end
         -- First choice: the component's own map of inventories.
         if #comps > 0 then
             pcall(function()
-                comps[1].Inventories:ForEach(function(k, v)
+                unwrap(comps[1]).Inventories:ForEach(function(k, v)
                     local inv = v:get()
                     if not found and inv and inv:IsValid() then found = inv end
                 end)
@@ -309,7 +341,7 @@ local function isPowered(gate)
         local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
         local comps = gate:K2_GetComponentsByClass(cls)
         if #comps == 0 then return nil end
-        local res = comps[1]
+        local res = unwrap(comps[1])
         if res:IsDeviceTurnedOn() ~= true then return false end
         local energy = res.EnergyComponent:Get()
         if not valid(energy) then return false end
@@ -322,24 +354,33 @@ end
 
 -- Stack size lives in the item's dynamic data as (PropertyType = ItemableStack, Value = n).
 -- Never hand the item struct to a native function: that crashed the game.
+-- UE4SS returns the struct's TArray as a plain Lua table (elements are tables or struct userdata),
+-- so accept every shape: Lua table, userdata with ForEach, or wrapped in a RemoteUnrealParam.
 local stackDebugged = false
 local function stackOf(item)
     local count, seen = nil, {}
-    local ok, err = pcall(function()
-        item.ItemDynamicData:ForEach(function(index, elem)
-            local entry = elem:get()
-            local ptype, value = tonumber(entry.PropertyType), tonumber(entry.Value)
-            seen[#seen + 1] = tostring(entry.PropertyType) .. "=" .. tostring(entry.Value)
-            if ptype == CONFIG.StackProperty then count = value end
-        end)
-    end)
-    if not ok and not stackDebugged then
-        stackDebugged = true
-        log("stack read failed: %s", tostring(err))
+    local function consider(entry)
+        entry = unwrap(entry)
+        local ptype, value = nil, nil
+        pcall(function() ptype, value = entry.PropertyType, entry.Value end)
+        local isStack = tonumber(ptype) == CONFIG.StackProperty or tostring(ptype):find("ItemableStack", 1, true) ~= nil
+        seen[#seen + 1] = tostring(ptype) .. "=" .. tostring(value)
+        if isStack and tonumber(value) then count = tonumber(value) end
     end
-    if count == nil and not stackDebugged then
+    local ok, err = pcall(function()
+        local dyn = unwrap(item.ItemDynamicData)
+        if type(dyn) == "table" then
+            for _, entry in pairs(dyn) do consider(entry) end
+        elseif type(dyn) == "userdata" and dyn.ForEach ~= nil then
+            dyn:ForEach(function(_, entry) consider(entry) end)
+        else
+            error("ItemDynamicData is " .. type(item.ItemDynamicData) .. " -> " .. type(dyn))
+        end
+    end)
+    if not stackDebugged then
         stackDebugged = true
-        dbg("stack property not found; dynamic data = [%s]", table.concat(seen, ", "))
+        if not ok then log("stack read failed: %s", tostring(err))
+        else dbg("stack read: count=%s dynamic data = [%s]", tostring(count), table.concat(seen, ", ")) end
     end
     return count or 1
 end
@@ -374,8 +415,23 @@ local function consumeExotics(inv, amount)
     return amount - left
 end
 
+-- Module bays: the rows slotted in any bay, by name.
+local function modulesOf(anchor)
+    local inv, found = panelOf(anchor), {}
+    for _, slot in ipairs(CONFIG.ModuleSlots) do
+        local row = rowInSlot(inv, slot)
+        if row then found[row] = true end
+    end
+    return found
+end
+
 local function hasCoupler(anchor)
-    return rowInSlot(panelOf(anchor), CONFIG.ModuleSlot) == CONFIG.CouplerRow
+    return modulesOf(anchor)[CONFIG.CouplerRow] == true
+end
+
+-- Channel bandwidth in power units: what a coupled anchor may push to its resonator's grid.
+local function bandwidthOf(anchor)
+    return modulesOf(anchor)[CONFIG.AmplifierRow] and CONFIG.RelayUpgradedRate or CONFIG.RelayBaseRate
 end
 
 ------------------------------------------------------------------------------------------
@@ -398,6 +454,94 @@ local function tell(player, text)
 end
 
 ------------------------------------------------------------------------------------------
+-- Sounds: the game's own FMOD events, played as replicated one-shots at a gate.
+------------------------------------------------------------------------------------------
+
+local eventCache, soundFailed = {}, {}
+
+local function loadEvent(path)
+    if not path then return nil end
+    if valid(eventCache[path]) then return eventCache[path] end
+    local ok, ev = pcall(StaticFindObject, path)
+    if not (ok and valid(ev)) then ok, ev = pcall(LoadAsset, path) end
+    if ok and valid(ev) then
+        eventCache[path] = ev
+        return ev
+    end
+    log("could not load sound %s", path)
+    return nil
+end
+
+local function eventLength(ev)
+    local n = -1
+    pcall(function()
+        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+        if valid(lib) then n = tonumber(lib:GetEventLengthInSeconds(ev)) or -1 end
+    end)
+    return n
+end
+
+local function transformAt(loc)
+    return {
+        Rotation    = { X = 0, Y = 0, Z = 0, W = 1 },
+        Translation = { X = loc.X, Y = loc.Y, Z = loc.Z },
+        Scale3D     = { X = 1, Y = 1, Z = 1 },
+    }
+end
+
+-- Play an event at a location. First the game's replicated one-shot (everyone nearby hears it),
+-- then FMOD's plain positional call as a fallback. A path that errors is not retried.
+local function playEventAt(path, contextActor, loc)
+    if not CONFIG.SoundsEnabled or soundFailed[path] then return false end
+    local ev = loadEvent(path)
+    if not ev then return false end
+    local transform = transformAt(loc)
+    local ok, err = pcall(function()
+        local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+        if not valid(lib) then error("audio library not found") end
+        -- No occlusion: the sound sits inside the gate mesh and would be muffled by it.
+        lib:PlayReplicatedOneShot(contextActor, ev, transform, false, false)
+    end)
+    if ok then return true end
+    local ok2, err2 = pcall(function()
+        local fmod = StaticFindObject("/Script/FMODStudio.Default__FMODBlueprintStatics")
+        if not valid(fmod) then error("FMOD statics not found") end
+        fmod:PlayEventAtLocation(contextActor, ev, transform, true, false)
+    end)
+    if ok2 then return true end
+    soundFailed[path] = true
+    log("sound %s failed (%s / %s)", path, tostring(err), tostring(err2))
+    return false
+end
+
+-- Sounds play a metre and a half above the gate's origin, clear of its mesh.
+local function playSound(name, actor, loc)
+    local at = loc or locationOf(actor)
+    return playEventAt(CONFIG.Sounds[name], actor, { X = at.X, Y = at.Y, Z = at.Z + 150 })
+end
+
+-- How long the charge-up runs: the Charge event's length as FMOD reports it, else the config value.
+local chargeLength = nil
+local function chargeSeconds()
+    if chargeLength then return chargeLength end
+    local seconds = CONFIG.ChargeSeconds
+    local ev = CONFIG.ChargeFollowsSound and loadEvent(CONFIG.Sounds.Charge) or nil
+    if ev then
+        local n = eventLength(ev)
+        if n >= 1 and n <= 10 then seconds = n end
+    end
+    chargeLength = seconds
+    dbg("charge-up length: %.2f s", seconds)
+    return seconds
+end
+
+-- A refusal: message plus the Fail sound at the gate.
+local function refuse(player, gate, text)
+    playSound("Fail", gate)
+    return tell(player, text)
+end
+
+------------------------------------------------------------------------------------------
 -- Look: hide every mesh component on the crate actor, then show our mesh in DeployableSM
 ------------------------------------------------------------------------------------------
 
@@ -408,15 +552,27 @@ local function loadMesh(kind)
     local path = CONFIG.Meshes[kind]
     if not path then return nil end
     if valid(meshCache[kind]) then return meshCache[kind] end
+    -- Already in memory (someone carries the item, or it is placed nearby)?
     local ok, mesh = pcall(StaticFindObject, path)
-    if not ok or not valid(mesh) then
-        ok, mesh = pcall(LoadAsset, (path:gsub("%.[^./]+$", "")))
-    end
     if ok and valid(mesh) then
         meshCache[kind] = mesh
         return mesh
     end
-    log("could not load %s mesh %s (%s)", kind, path, tostring(mesh))
+    -- Otherwise ask the asset registry. LoadAsset wants the object path ("/Game/X/Y.Y"), not the
+    -- package path; it returns (object, wasFound, didLoad). Game thread only (we are).
+    local found, loaded = nil, nil
+    ok, mesh, found, loaded = pcall(LoadAsset, path)
+    if not (ok and valid(mesh)) then
+        local pkg = path:gsub("%.[^./]+$", "")
+        local ok2, mesh2, found2, loaded2 = pcall(LoadAsset, pkg)
+        if ok2 and valid(mesh2) then ok, mesh, found, loaded = ok2, mesh2, found2, loaded2 end
+    end
+    if ok and valid(mesh) then
+        meshCache[kind] = mesh
+        log("%s mesh loaded on demand: %s", kind, path)
+        return mesh
+    end
+    log("could not load %s mesh %s (ok=%s found=%s loaded=%s)", kind, path, tostring(ok), tostring(found), tostring(loaded))
     return nil
 end
 
@@ -454,15 +610,18 @@ local function applyLook(actor, kind)
         local slotName = fullName(slot)
         local report, hidden = {}, 0
 
-        for _, comp in ipairs(componentsOf(actor)) do
-            local cls = className(comp)
-            if cls:find("MeshComponent", 1, true) and fullName(comp) ~= slotName then
+        for _, name in ipairs(CONFIG.HideComponents) do
+            local comp = nil
+            pcall(function() comp = unwrap(actor[name]) end)
+            if valid(comp) and fullName(comp) ~= slotName then
                 local vis = nil
                 pcall(function() vis = comp:IsVisible() end)
                 pcall(function() comp:SetVisibility(false, true) end)
                 pcall(function() comp:SetHiddenInGame(true, true) end)
                 hidden = hidden + 1
-                report[#report + 1] = string.format("%s(%s) was vis=%s", shortName(comp), cls, tostring(vis))
+                report[#report + 1] = string.format("%s was vis=%s", name, tostring(vis))
+            else
+                report[#report + 1] = name .. " missing"
             end
         end
 
@@ -478,36 +637,19 @@ local function applyLook(actor, kind)
     if not ok then log("applyLook failed: %s", tostring(err)) end
 end
 
--- One-time diagnostic: a few seconds after the look pass, list every component on the actor
--- so whatever still draws a box can be identified.
-local dumped = {}
-local function dumpComponentsLater(actor)
-    local key = fullName(actor)
-    if dumped[key] then return end
-    dumped[key] = true
-    ExecuteWithDelay(3000, function()
-        ExecuteInGameThread(function()
-            pcall(function()
-                if not valid(actor) then return end
-                local comps = componentsOf(actor)
-                local parts = {}
-                for _, c in ipairs(comps) do
-                    local vis = "-"
-                    pcall(function() vis = tostring(c:IsVisible()) end)
-                    parts[#parts + 1] = string.format("%s:%s vis=%s", className(c), shortName(c), vis)
-                end
-                log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
-                pcall(function()
-                    local out = {}
-                    actor:GetAttachedActors(out, true)
-                    if #out > 0 then
-                        local names = {}
-                        for i = 1, #out do names[#names + 1] = fullName(out[i]) end
-                        log("attached actors of %s: %s", shortName(actor), table.concat(names, " | "))
-                    end
-                end)
-            end)
-        end)
+-- Diagnostic (console: `massgate dump`): list every component on each gate. Walks the whole
+-- object table, which stalls the game for a couple of seconds, so never run it automatically.
+local function dumpComponents(actor)
+    pcall(function()
+        if not valid(actor) then return end
+        local comps = componentsOf(actor)
+        local parts = {}
+        for _, c in ipairs(comps) do
+            local vis = "-"
+            pcall(function() vis = tostring(c:IsVisible()) end)
+            parts[#parts + 1] = string.format("%s:%s vis=%s", className(c), shortName(c), vis)
+        end
+        log("components of %s (%d): %s", shortName(actor), #comps, table.concat(parts, " | "))
     end)
 end
 
@@ -525,7 +667,7 @@ local function findMapIcon(actor, compClass)
     local found = nil
     pcall(function()
         local comps = actor:K2_GetComponentsByClass(compClass)
-        if #comps > 0 then found = comps[1] end
+        if #comps > 0 then found = unwrap(comps[1]) end
     end)
     return found
 end
@@ -705,9 +847,7 @@ end
 
 local function tripCost(kind, anchor)
     if kind ~= "Anchor" then return CONFIG.ExoticsInbound end
-    local cost = CONFIG.ExoticsOutbound
-    if anchor and hasCoupler(anchor) then cost = cost + CONFIG.CouplerExtraExotics end
-    return cost
+    return CONFIG.ExoticsOutbound
 end
 
 -- Returns powered, source ("grid" | "coupled" | "dev" | "none").
@@ -787,6 +927,15 @@ local function performTransit(gate, kind, channel, player, partner)
         end
     end
 
+    -- The charge sound is still playing at the origin; the destination gets its own, a moment
+    -- later so the audio listener has caught up with the player (fired instantly it is culled
+    -- as out of range).
+    ExecuteWithDelay(CONFIG.ArrivalSoundDelayMs, function()
+        ExecuteInGameThread(function()
+            pcall(function() if valid(partner) then playSound("Transit", partner, dest) end end)
+        end)
+    end)
+
     local now = os.time()
     lastTransit[fullName(gate)] = now
     lastTransit[fullName(partner)] = now
@@ -805,57 +954,190 @@ local function performTransit(gate, kind, channel, player, partner)
     tell(player, table.concat(parts, " "))
 end
 
+------------------------------------------------------------------------------------------
+-- Power relay. Every RelayMs, for each coupled Anchor with a tuned partner: read the partner's
+-- grid (supply/demand), size a dynamic production source on the Resonator to the shortfall,
+-- and mirror it as a dynamic consumption source on the Anchor, capped by the channel bandwidth.
+-- Registry reads only: no world scans. Any failure of the native call disables the relay
+-- for the session and logs it.
+------------------------------------------------------------------------------------------
+
+local resCompCache = {} -- gate full name -> UResourceComponent
+local function resourceComponentOf(gate)
+    local key = fullName(gate)
+    local cached = resCompCache[key]
+    if cached and cached:IsValid() then return cached end
+    local found = nil
+    pcall(function()
+        local cls = StaticFindObject("/Script/Icarus.ResourceComponent")
+        local comps = gate:K2_GetComponentsByClass(cls)
+        if #comps > 0 then found = unwrap(comps[1]) end
+    end)
+    if valid(found) then resCompCache[key] = found end
+    return found
+end
+
+local function energyNetworkOf(res)
+    local net = nil
+    pcall(function()
+        local energy = res.EnergyComponent:Get()
+        if valid(energy) then net = energy:GetConnectedNetwork() end
+    end)
+    if valid(net) then return net end
+    return nil
+end
+
+local function networkNumbers(net)
+    local supply, demand = 0, 0
+    if not net then return supply, demand end
+    pcall(function()
+        supply = tonumber(net.LastTotalSupply) or 0
+        demand = tonumber(net.LastTotalDemand) or 0
+    end)
+    return supply, demand
+end
+
+local relayState = {}      -- anchor full name -> { rate, resonatorName, resRes, resonator, cap, note }
+local relayFailed = false
+local relayFirstCall = true
+
+local function setFlow(res, source, rate, consume)
+    if relayFirstCall then
+        relayFirstCall = false
+        log("relay: first dynamic flow call (%s, rate %d, consume=%s)", shortName(source), rate, tostring(consume))
+    end
+    return pcall(function()
+        res:AddOrModifyDynamicFlowSource(source, { Value = FName(CONFIG.RelayResource) }, rate, consume)
+    end)
+end
+
+-- Push (rate) to the pair; zero the previous resonator first if the pairing changed.
+local function pushRelay(state, anchor, resonator, rate)
+    local rRes = resonator and resourceComponentOf(resonator) or nil
+    if state.resRes and valid(state.resRes) and (not rRes or fullName(state.resRes) ~= fullName(rRes)) then
+        setFlow(state.resRes, state.resonator, 0, false)
+        state.resRes, state.resonator, state.resonatorName = nil, nil, nil
+    end
+    local ok1, err1, ok2, err2 = true, nil, true, nil
+    if rRes then ok1, err1 = setFlow(rRes, resonator, rate, false) end
+    local aRes = resourceComponentOf(anchor)
+    if aRes then ok2, err2 = setFlow(aRes, anchor, rate, true) end
+    if not (ok1 and ok2) then
+        relayFailed = true
+        log("relay DISABLED for this session: dynamic flow call failed (%s / %s)", tostring(err1), tostring(err2))
+        return false
+    end
+    state.rate = rate
+    if rRes then state.resRes, state.resonator, state.resonatorName = rRes, resonator, fullName(resonator) end
+    return true
+end
+
+local function relayTick()
+    if not CONFIG.Relay or relayFailed or not hooked then return end
+    local gates = allGates()
+    for _, entry in ipairs(gates) do
+        if entry.kind == "Anchor" then
+            local anchor = entry.actor
+            local key = fullName(anchor)
+            local state = relayState[key] or { rate = 0 }
+            relayState[key] = state
+            local resonator, rate, note = nil, 0, "no coupler"
+            if hasCoupler(anchor) then
+                note = "no partner"
+                local partner = entry.channel and resolvePartner(anchor, "Anchor", entry.channel, gates) or nil
+                if partner then
+                    resonator = partner.actor
+                    if not (CONFIG.DevAnchorsPowered or isPowered(anchor)) then
+                        note = "anchor unpowered"
+                    else
+                        local rRes = resourceComponentOf(resonator)
+                        local net = rRes and energyNetworkOf(rRes) or nil
+                        if not net then
+                            note = "resonator has no grid"
+                        else
+                            local supply, demand = networkNumbers(net)
+                            local own = (state.resonatorName == fullName(resonator)) and state.rate or 0
+                            local need = math.max(0, demand - (supply - own))
+                            local cap = bandwidthOf(anchor)
+                            local avail = cap
+                            if not CONFIG.DevAnchorsPowered then
+                                local aNet = energyNetworkOf(resourceComponentOf(anchor))
+                                if aNet then
+                                    local aSupply, aDemand = networkNumbers(aNet)
+                                    avail = math.min(cap, math.max(0, aSupply - (aDemand - state.rate)))
+                                end
+                            end
+                            rate = math.floor(math.min(need, avail))
+                            state.cap = cap
+                            note = string.format("outpost demand %d, own supply %d, cap %d", demand, supply - own, cap)
+                        end
+                    end
+                end
+            end
+            local resonatorChanged = (resonator and fullName(resonator) or nil) ~= state.resonatorName
+            if rate ~= state.rate or resonatorChanged then
+                if pushRelay(state, anchor, resonator, rate) then
+                    log("relay %s [%s] -> %s: %d units (%s)", shortName(anchor), tostring(entry.channel),
+                        resonator and shortName(resonator) or "-", rate, note)
+                end
+            end
+            state.note = note
+        end
+    end
+end
+
 local function engage(gate, player)
     local kind, channel = identify(gate)
     local key = fullName(gate)
     if charging[key] then
         if charging[key] == fullName(player) then
-            return tell(player, "Lattice already charging.")
+            return refuse(player, gate, "Lattice already charging.")
         end
-        return tell(player, "Lattice is charging for another prospector. Wait your turn.")
+        return refuse(player, gate, "Lattice is charging for another prospector. Wait your turn.")
     end
 
     local gates = allGates()
     dbg("engage %s [%s]: %d gate(s) on prospect", kind, tostring(channel), #gates)
 
     local partnerEntry, why = resolvePartner(gate, kind, channel, gates)
-    if not partnerEntry then return tell(player, why) end
+    if not partnerEntry then return refuse(player, gate, why) end
     local partner = partnerEntry.actor
 
     local now = os.time()
     if lastTransit[key] and now - lastTransit[key] < CONFIG.CooldownSeconds then
-        return tell(player, string.format("Lattice re-stabilising, %d s remaining.",
+        return refuse(player, gate, string.format("Lattice re-stabilising, %d s remaining.",
             CONFIG.CooldownSeconds - (now - lastTransit[key])))
     end
 
     local notReady = checkReady(gate, kind, partner)
-    if notReady then return tell(player, notReady) end
+    if notReady then return refuse(player, gate, notReady) end
 
     if CONFIG.ChargeSeconds <= 0 then
         return performTransit(gate, kind, channel, player, partner)
     end
 
     charging[key] = fullName(player)
-    tell(player, string.format("Lattice charging: %s to %s on %s. Stay in the field for %d s.",
-        kind, otherKind(kind), channel, CONFIG.ChargeSeconds))
+    playSound("Charge", gate)
+    local seconds = chargeSeconds()
+    dbg("charging %s -> %s on %s for %.2f s", kind, otherKind(kind), channel, seconds)
 
-    ExecuteWithDelay(CONFIG.ChargeSeconds * 1000, function()
+    ExecuteWithDelay(math.floor(seconds * 1000), function()
         ExecuteInGameThread(function()
             charging[key] = nil
             local ok, err = pcall(function()
                 if not valid(gate) or not valid(player) then return end
                 if not valid(partner) then
-                    return tell(player, "Transit aborted: the partner lattice is gone.")
+                    return refuse(player, gate, "Transit aborted: the partner lattice is gone.")
                 end
                 if distance(locationOf(player), locationOf(gate)) > CONFIG.FieldRadiusCm then
-                    return tell(player, "Transit aborted: you left the field.")
+                    return refuse(player, gate, "Transit aborted: you left the field.")
                 end
                 local _, nowChannel = identify(gate)
                 if nowChannel ~= channel or channelOf(partner) ~= channel then
-                    return tell(player, "Transit aborted: a crystal was changed while charging.")
+                    return refuse(player, gate, "Transit aborted: a crystal was changed while charging.")
                 end
                 local stillNotReady = checkReady(gate, kind, partner)
-                if stillNotReady then return tell(player, "Transit aborted: " .. stillNotReady) end
+                if stillNotReady then return refuse(player, gate, "Transit aborted: " .. stillNotReady) end
                 performTransit(gate, kind, channel, player, partner)
             end)
             if not ok then log("charge completion error: %s", tostring(err)) end
@@ -927,6 +1209,16 @@ LoopAsync(CONFIG.IconRefreshMs, function()
     return false
 end)
 
+LoopAsync(CONFIG.RelayMs, function()
+    if hooked then
+        ExecuteInGameThread(function()
+            local ok, err = pcall(relayTick)
+            if not ok then log("relay tick failed: %s", tostring(err)) end
+        end)
+    end
+    return false
+end)
+
 for _, bpPath in ipairs(CONFIG.GateBlueprints) do
     pcall(NotifyOnNewObject, bpPath, function(actor)
         ExecuteWithDelay(500, function()
@@ -938,7 +1230,6 @@ for _, bpPath in ipairs(CONFIG.GateBlueprints) do
                         tostring(isPowered(actor)), (exoticsIn(panelOf(actor))), tostring(panelOf(actor) ~= nil))
                     applyLook(actor, kind)
                     updateMapIcon(actor, kind, channel)
-                    dumpComponentsLater(actor)
                 end
             end)
         end)
@@ -947,11 +1238,128 @@ end
 
 pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameters, Ar)
     local gates = allGates()
+    if Parameters[1] == "sfx" then
+        local path, ctx = Parameters[2], gates[1] and gates[1].actor or nil
+        if not path or not ctx then
+            Ar:Log("[Massgate] usage: massgate sfx </Game/FMOD/Events/SFX/....Name>  (needs at least one placed gate)")
+            return true
+        end
+        if not path:find("^/Game/") then
+            -- Short form: any unique substring of an event name from sfx_events.lua.
+            local okList, list = pcall(require, "sfx_events")
+            local hits = {}
+            if okList and type(list) == "table" then
+                for _, full in ipairs(list) do
+                    if full:lower():find(path:lower(), 1, true) then hits[#hits + 1] = full end
+                end
+            end
+            if #hits ~= 1 then
+                Ar:Log(string.format("[Massgate] '%s' matches %d events; be more specific", path, #hits))
+                for i = 1, math.min(#hits, 15) do Ar:Log("   " .. hits[i]) end
+                return true
+            end
+            path = hits[1]
+        end
+        local ev = loadEvent(path)
+        if not ev then Ar:Log("[Massgate] could not load " .. path) return true end
+        -- Same call the gates use, at the listener (the player's ears); falls back to the gate.
+        local loc = nil
+        pcall(function()
+            local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+            local l = lib:GetListenerLocation(ctx)
+            if l and l.X then loc = { X = l.X, Y = l.Y, Z = l.Z } end
+        end)
+        loc = loc or locationOf(ctx)
+        soundFailed[path] = nil
+        local played = playEventAt(path, ctx, loc)
+        Ar:Log(string.format("[Massgate] sfx %s (%.2f s) at %s -> %s", path, eventLength(ev), fmtLoc(loc), played and "played" or "FAILED (see UE4SS.log)"))
+        return true
+    end
+    if Parameters[1] == "sfxtour" then
+        -- Play every matching event in turn, spaced by its length, announcing each on screen.
+        -- Silent ones are parameter-gated; note the names you like. Max 80 per run.
+        local needle, ctx = Parameters[2], gates[1] and gates[1].actor or nil
+        if not needle or not ctx then Ar:Log("[Massgate] usage: massgate sfxtour <substring>  (needs a placed gate)") return true end
+        local okList, list = pcall(require, "sfx_events")
+        if not okList then Ar:Log("[Massgate] sfx_events.lua missing") return true end
+        local controller = nil
+        pcall(function()
+            local gs = StaticFindObject("/Script/Engine.Default__GameplayStatics")
+            controller = gs:GetPlayerController(ctx, 0)
+        end)
+        local say = function(text)
+            log("sfxtour %s", text)
+            pcall(function() if valid(controller) then controller:AddLocalMessage("[sfx] " .. text) end end)
+        end
+        local delay, n = 0, 0
+        for _, full in ipairs(list) do
+            if n < 80 and full:lower():find(needle:lower(), 1, true) then
+                n = n + 1
+                local index, path = n, full
+                ExecuteWithDelay(math.floor(delay), function()
+                    ExecuteInGameThread(function()
+                        local ev = loadEvent(path)
+                        local len = ev and eventLength(ev) or -1
+                        local loc = locationOf(ctx)
+                        pcall(function()
+                            local lib = StaticFindObject("/Script/Icarus.Default__IcarusAudioFunctionLibrary")
+                            local l = lib:GetListenerLocation(ctx)
+                            if l and l.X then loc = { X = l.X, Y = l.Y, Z = l.Z } end
+                        end)
+                        soundFailed[path] = nil
+                        playEventAt(path, ctx, loc)
+                        say(string.format("%d/%d  %s  (%.1f s)", index, n, path:match("/SFX/(.*)%.[^.]*$") or path, len))
+                    end)
+                end)
+                delay = delay + 4000 -- one every 4 s; long events are cut off by the next, which is fine
+            end
+        end
+        Ar:Log(string.format("[Massgate] sfxtour '%s': %d event(s), one every 4 s, names on screen and in UE4SS.log", needle, n))
+        return true
+    end
+    if Parameters[1] == "sfxscan" then
+        -- Load every event whose path contains the substring and print its length, so a sample
+        -- decoded from the banks can be matched to its event by duration. Diagnostic only.
+        local needle = Parameters[2]
+        if not needle then Ar:Log("[Massgate] usage: massgate sfxscan <substring of event path>") return true end
+        local okList, list = pcall(require, "sfx_events")
+        if not okList or type(list) ~= "table" then Ar:Log("[Massgate] sfx_events.lua missing") return true end
+        local n, shown = 0, 0
+        for _, full in ipairs(list) do
+            if full:lower():find(needle:lower(), 1, true) then
+                n = n + 1
+                local ev = loadEvent(full)
+                local len = ev and eventLength(ev) or -1
+                local short = full:match("/SFX/(.*)%.[^.]*$") or full
+                log("sfxscan %6.2f s  %s", len, short)
+                if shown < 40 then Ar:Log(string.format("  %6.2f s  %s", len, short)) shown = shown + 1 end
+            end
+        end
+        Ar:Log(string.format("[Massgate] sfxscan '%s': %d event(s), all in UE4SS.log", needle, n))
+        return true
+    end
+    if Parameters[1] == "power" then
+        Ar:Log(string.format("[Massgate] relay enabled=%s failed=%s", tostring(CONFIG.Relay), tostring(relayFailed)))
+        for _, entry in ipairs(gates) do
+            local res = resourceComponentOf(entry.actor)
+            local supply, demand = networkNumbers(res and energyNetworkOf(res) or nil)
+            local st = relayState[fullName(entry.actor)]
+            Ar:Log(string.format("  %s [%s] grid supply=%d demand=%d powered=%s%s", entry.kind, tostring(entry.channel),
+                supply, demand, tostring(isPowered(entry.actor)),
+                st and string.format("  relay=%d cap=%s (%s)", st.rate, tostring(st.cap), tostring(st.note)) or ""))
+        end
+        return true
+    end
+    if Parameters[1] == "dump" then
+        for _, entry in ipairs(gates) do dumpComponents(entry.actor) end
+        Ar:Log(string.format("[Massgate] dumped %d gate(s) to UE4SS.log", #gates))
+        return true
+    end
     Ar:Log(string.format("[Massgate] %d gate(s); hooked=%s dev=%s", #gates, tostring(hooked), tostring(DEV_MODE)))
     for i, entry in ipairs(gates) do
         Ar:Log(string.format("  #%d %s [%s] %s powered=%s exotics=%d coupler=%s", i, entry.kind, tostring(entry.channel),
             fmtLoc(locationOf(entry.actor)), tostring(isPowered(entry.actor)), (exoticsIn(panelOf(entry.actor))),
-            tostring(entry.kind == "Anchor" and hasCoupler(entry.actor))))
+            tostring(entry.kind == "Anchor" and hasCoupler(entry.actor)) .. (entry.kind == "Anchor" and modulesOf(entry.actor)[CONFIG.AmplifierRow] and "+amp" or "")))
     end
     return true
 end)

@@ -20,3 +20,6 @@ desktop.ini
 
 # JSON tables pulled from installed mod paks (merge base, regenerate)
 data/installed/
+
+# Previous extraction: merge baseline for --merge-installed (--extract refreshes it)
+data/previous/

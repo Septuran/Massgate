@@ -210,6 +210,52 @@
                         ],
                         "ParentTags": []
                     }
+                },
+                {
+                    "Name": "Massgate_Amplifier",
+                    "Meshable": {
+                        "RowName": "Mesh_Generic_Fabricator"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Massgate_Amplifier"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Manual_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade2"
+                            }
+                        ]
+                    },
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Item.Communicator.Upgrade2"
+                            },
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
                 }
             ]
         },
@@ -233,6 +279,12 @@
                     "ItemStaticData": {
                         "RowName": "Massgate_Coupler"
                     }
+                },
+                {
+                    "Name": "Massgate_Amplifier",
+                    "ItemStaticData": {
+                        "RowName": "Massgate_Amplifier"
+                    }
                 }
             ]
         },
@@ -243,7 +295,7 @@
                     "Name": "Item_Massgate_Anchor",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-DisplayName\", \"Massgate Anchor Lattice\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Landing_Pad_OEI.T_ITEM_Landing_Pad_OEI",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Tune it to one of the three colour charges; an anchor triplet of all three colours is colour-neutral, which is why anchors can stand side by side. Hold to open the lattice and load it with Exotics: every outbound transit burns some to re-stabilise the lattice. Inbound transits are carried by the anchor's own mass. Needs heavy power. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-Description\", \"The base end of a Massgate pair. A heavy lattice of stabilised exotic matter that bends space toward itself and pulls whatever stands in a tuned Resonator's field back to this pad. Tune it to one of the three colour charges; an anchor triplet of all three colours is colour-neutral, which is why anchors can stand side by side. Hold to open the lattice and load it with Exotics: every outbound transit burns some to re-stabilise the lattice. Inbound transits are carried by the anchor's own mass. Needs heavy power. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal, slot 7 module. Modules only act in an Anchor.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Anchor-FlavorText\", \"Three colours. No fourth. Confinement is not a limit of the machine but of the universe. UDA Field Manual, addendum 7, classified.\")",
                     "Weight": 40000,
                     "MaxStack": 1
@@ -252,7 +304,7 @@
                     "Name": "Item_Massgate_Resonator",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-DisplayName\", \"Massgate Resonator\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/ITEM_Survey_Transmitter.ITEM_Survey_Transmitter",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-Description\", \"The field end of a Massgate pair. A sliver of exotic lattice carrying a single colour charge, just enough to phase-lock to the Anchor of the same colour. Light, modest on power, and unshielded: any other lattice within 500 m, Anchor or Resonator, pulls it off frequency and it refuses to tune. Place it far from everything and give it its own small power supply. Panel layout (hold interact): slots 1-4 Exotics, slot 5 module, slot 6 Tuning Crystal, slot 7 module. Modules only act in an Anchor.\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Resonator-FlavorText\", \"A tuning fork does not sing on its own. It waits for the bell.\")",
                     "Weight": 15000,
                     "MaxStack": 1
@@ -261,9 +313,18 @@
                     "Name": "Item_Massgate_Coupler",
                     "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-DisplayName\", \"Massgate Phase Coupler\")",
                     "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Modules/T_ITEM_MODULE_UTILITY_Movement.T_ITEM_MODULE_UTILITY_Movement",
-                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (the fifth slot of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own. Pushing power as well as a prospector costs extra Exotics per outbound transit.\")",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-Description\", \"Slots into the module bay of an Anchor Lattice (slot 5 or 7 of its panel). A tuned pair already shares a phase; the coupler lets the anchor push energy along the colour channel, so its Resonator needs no power supply of its own, and anything wired to that Resonator draws from the anchor's grid, up to 5,000 units (20,000 with a Channel Amplifier in the other bay).\")",
                     "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Coupler-FlavorText\", \"Strike the bell hard enough and the fork sings on its own.\")",
                     "Weight": 5000,
+                    "MaxStack": 1
+                },
+                {
+                    "Name": "Item_Massgate_Amplifier",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Amplifier-DisplayName\", \"Massgate Channel Amplifier\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Modules/T_ITEM_MODULE_UTILITY_CarryWeight.T_ITEM_MODULE_UTILITY_CarryWeight",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Amplifier-Description\", \"Slots into a module bay of an Anchor Lattice (slot 5 or 7 of its panel). Widens the colour channel: with a Phase Coupler in the other bay the anchor can push up to 20,000 units of power to its Resonator's grid instead of 5,000. Does nothing without a Phase Coupler.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Massgate_Amplifier-FlavorText\", \"Same song, wider pipe.\")",
+                    "Weight": 8000,
                     "MaxStack": 1
                 }
             ]
@@ -960,6 +1021,70 @@
                     "Audio": {
                         "RowName": "MachiningBench"
                     }
+                },
+                {
+                    "Name": "Massgate_Amplifier",
+                    "Requirement": {
+                        "RowName": "Massgate_Gate"
+                    },
+                    "RequiredMillijoules": 250000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "MetaResource",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 150
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Electronics",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 40
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 120
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Platinum_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 30
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Powerbank",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 4
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Massgate_Amplifier",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
                 }
             ]
         },
@@ -1019,7 +1144,7 @@
                     "SlotTemplate": {
                         "RowName": "Any_Meta"
                     },
-                    "StartingSlots": 6,
+                    "StartingSlots": 7,
                     "SlotOverrides": [
                         {
                             "Query": {
@@ -1034,6 +1159,13 @@
                                 "DataTableName": "D_TagQueries"
                             },
                             "Location": 5
+                        },
+                        {
+                            "Query": {
+                                "RowName": "Mission_Communicator_Upgrade_2",
+                                "DataTableName": "D_TagQueries"
+                            },
+                            "Location": 6
                         }
                     ]
                 }
@@ -1254,8 +1386,8 @@
         }
     },
     "channel_icons": {
-        "Red": "/Game/Assets/2DArt/UI/Items/Item_Icons/Voxels/T_ITEM_Ore_RedExotic_WithIcon.T_ITEM_Ore_RedExotic_WithIcon",
-        "Green": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Condensed_Exotic.T_ITEM_Condensed_Exotic",
-        "Blue": "/Game/Assets/2DArt/UI/Items/Item_Icons/Voxels/T_ITEM_Ore_Exotic_WithIcon.T_ITEM_Ore_Exotic_WithIcon"
+        "Red": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Red.T_ITEM_Flare_Red",
+        "Green": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Green.T_ITEM_Flare_Green",
+        "Blue": "/Game/Assets/2DArt/UI/Items/Item_Icons/Projectiles/T_ITEM_Flare_Blue.T_ITEM_Flare_Blue"
     }
 }

@@ -23,19 +23,26 @@ Two parts ship together and both are required:
 
 ## Building
 
-1. Unpack the game's data tables once:
+1. Unpack the game's data tables:
    ```
-   tools\bin\repak.exe unpack -s "C:/BA/work/92bbbfa44df12262/Temp/Data/" -o data\original "D:\SteamLibrary\steamapps\common\Icarus\Icarus\Content\Data\data.pak"
+   python tools\build.py --extract
    ```
-   The mount prefix inside data.pak is that odd build-machine path; strip it or the
-   files land in the wrong place.
+   (runs `repak unpack` with the odd build-machine mount prefix stripped). **Redo this after
+   every game update**: both paks replace whole tables, so stale tables silently undo the
+   update (2026-09-04: Sulfur lost its icon that way). The build refuses to run while
+   `data.pak` is newer than the extracted tables.
 2. Build the pak:
    ```
    python tools\build.py --merge-installed --install
    ```
    `--merge-installed` layers the tables from other mod paks you have installed (unpacked
    into `data/installed/<pakname>/`) under ours, so our full-table replacement does not
-   undo them. `--install` copies the pak into the game's mods folder.
+   undo them. The merge is row by row: rows a mod adds are taken; rows that differ from the
+   fresh game table are taken only if they also differ from the previous game version
+   (`data/previous/`, kept by `--extract`), because a row equal to the old game row is just
+   the mod's stale copy of something the game update changed (2026-09-05: Gold Ore lost its
+   icon that way). Without a baseline, differing rows are taken and listed.
+   `--install` copies the pak into the game's mods folder.
    `--install` also copies the Lua mod into `Icarus\Binaries\Win64\ue4ss\Mods\Massgate`
    and writes its `config.lua` for the chosen mode.
 
@@ -45,18 +52,79 @@ Two parts ship together and both are required:
 python tools\build.py --merge-installed --dev --install
 ```
 
-`--dev` makes every Massgate recipe free (1 Fiber), removes the blueprint requirement, lets you
-craft from your inventory, and adds a dev-only recipe turning 1 Fiber into 200 Exotics. It sets
-`DevMode = true` in the installed `config.lua`: anchors count as powered, the cooldown is off and
-the interference radius is 10 m. Resonators still need power or a Phase Coupler, and trips still
-cost Exotics, so the buffer and the coupler can be tested. Rebuild without `--dev` for the real
-rules. Never ship a dev build.
+`--dev` makes every Massgate recipe free (1 Fiber), removes the blueprint requirement and lets you
+craft from your inventory. It sets `DevMode = true` in the installed `config.lua`: anchors count as
+powered, the cooldown is off, the interference radius is 10 m and trips cost no Exotics. Resonators
+still need power or a Phase Coupler. Rebuild without `--dev` for the real rules (the Exotics buffer
+was verified on a dev build with real costs before they were switched off). Never ship a dev build.
+
+## Fieldkit (second mod in this repo)
+
+`mod/ue4ss/Fieldkit/` is an independent UE4SS Lua mod with a small pak of its own: a kit of
+quality-of-life features, one file each under `Scripts/features/`, switched on and off from
+the game's own **Custom World Settings** screen (Escape, then Custom World Settings, host
+only). The pak `Fieldkit_v<version>_P.pak`, built from `mod/data/fieldkit_patches.json`,
+adds the features' rows to that screen; the game renders, saves and replicates them, and the
+Lua reads them from the ProspectSubsystem, applying changes the moment the host presses
+Apply. A prospect where the rows were never applied runs on the defaults. Only the host or
+server needs the Lua; everyone needs the pak.
+
+Features:
+
+- **tameregen** (Creatures section): every tame set to **Follow** heals a share of its
+  maximum health every second while out of combat (no attack target and no damage for 10 s),
+  on top of the game's flat 10-50 HP/minute. Rate row: percent of maximum health per minute,
+  1 to 60, default 15 = 0.25 %/s, so a 2,200 HP mount is back to full in about 7 minutes.
+  Scales with the creature talent **Nurtured Recovery**: rank 4 gives the full rate, ranks
+  1-3 give 8 / 25 / 50 % of it, no talent gives nothing (`NoTalentFraction`). Mounts, pets
+  and farm animals all count (everything derived from `BP_Mount_Base_C`).
+- **stow** (Misc section): one key puts the backpack away. Every storage container can be
+  **pinned** to a set of item types: open the chest, put in what belongs there and press
+  **Shift+P** (or the "Pin contents" button the mod adds to the chest window); the chest is
+  now pinned to exactly the types it holds, and pinning an empty chest clears it. With
+  **learning** on (default) opening a chest also adds its contents to its pins, so a chest
+  that crafting emptied still attracts its item. **Shift+E** then moves every backpack stack
+  whose type is pinned on a chest within range (default 30 m) into that chest, nearest first,
+  spilling into the next pinned chest when one is full; the hotbar is never touched. The
+  pins show in the chest window title (short form) and on the Pin bar (full list), as an
+  extra line in the in-world tooltip when you look at the chest, and in the message lines
+  after pinning and depositing. Pins are saved per prospect in
+  `<ue4ss>\FieldkitData\stow\`, keyed by the chest's class and position (pick a chest up and
+  place it again and it starts unpinned). Moves go through the game's own server-side
+  shift-item action, so it works as a client too. If NearbyCrafting is installed, set
+  `DepositEnabled = false` in its ini (its Quick Deposit also sits on Shift+E) and keep its
+  nearby crafting.
+
+Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
+settingsChanged, console, status }` (see the header of `main.lua`), its id in
+`CONFIG.Features`, and its rows in `fieldkit_patches.json` (a `D_CustomGameStats` row per
+switch, bound to a hidden world stat row in `D_Stats`, names prefixed `Fieldkit_`).
+
+`--install` installs the Lua next to Massgate and the pak next to the Massgate pak, and
+removes the old TameRegen copies. Always pass `--merge-installed` when installing on a game
+that has other table mods (both paks replace whole tables and load after most mods
+alphabetically; an un-merged install silently reverts those mods' rows). `--install
+--lua-only` refreshes just the Lua mods without touching either pak, which also works while
+the game runs: UE4SS reloads Lua with Ctrl+R provided `EnableHotReloadSystem = 1` in
+`ue4ss\UE4SS-settings.ini`. Fieldkit prints "Fieldkit v... loaded: ..." in the chat area on
+every load, and walks the object table once after a reload to pick up the actors that
+already exist (spawn notifications only cover new ones).
+Per-feature tunables are documented in `mod/ue4ss/Fieldkit/Scripts/config.lua`. Console:
+`fieldkit` (overview), `fieldkit tames`, `fieldkit tameregen` (per-tame health and why each
+is or is not healing), `fieldkit tameregen rate <percent per second>` (session override),
+`fieldkit stow` (containers in range and their pins), `fieldkit stow pins`, `fieldkit stow
+deposit`, `fieldkit stow pin|unpin <item row>` and `fieldkit stow clear` (on the open chest),
+`fieldkit stow names <text>` (item rows by display name), `fieldkit scan` / `fieldkit stow
+scan` (one-off object walks to pick up actors that spawned before the mod loaded, diagnostic
+only). Log prefixes `[Fieldkit]` and `[Fieldkit:<feature>]`.
 
 ## Layout
 
 ```
 mod/data/patches.json     rows we add to the data tables
 mod/ue4ss/Massgate/       UE4SS Lua mod (Scripts/main.lua, enabled.txt)
+mod/ue4ss/Fieldkit/       second UE4SS Lua mod: quality-of-life features (Scripts/features/*.lua)
+mod/data/fieldkit_patches.json   their Custom World Settings rows -> Fieldkit_v<ver>_P.pak
 tools/build.py            applies patches, validates references, packs with repak
 tools/find_rows.py        search the extracted tables for a term
 docs/design.md            concept, lore, rules, row map, roadmap

@@ -11,7 +11,13 @@ Usage:
                                           #   config gets DevMode = true (no power / exotics /
                                           #   cooldown, 10 m interference). Never ship a dev build.
     python tools/build.py --install       # also copy the pak into the game's Paks/mods folder and
-                                          #   the Lua mod into the UE4SS Mods folder
+                                          #   both Lua mods (Massgate, Fieldkit) into the UE4SS Mods folder
+    python tools/build.py --install --lua-only
+                                          # skip the pak: refresh only the Lua mods (works while the
+                                          #   game runs; UE4SS Ctrl+R reloads them)
+    python tools/build.py --extract ...   # re-extract data/original from the game's data.pak first;
+                                          #   required after every game update (the build refuses to
+                                          #   run on tables older than data.pak)
     python tools/build.py --repak PATH    # explicit path to repak.exe (else tools/bin/repak.exe)
 
 Steps:
@@ -20,13 +26,15 @@ Steps:
   3. (--dev) rewrite our recipe so it is free and unlocked
   4. validate every row reference we introduce points at an existing row
   5. write the full tables to build/pak/Icarus/Content/Data/...
-  6. pack build/pak into build/Massgate_P.pak with repak (V11, zlib)
-  7. (--install) copy pak + Lua mod into the game, writing config.lua for the chosen mode
+  6. pack build/pak into build/Massgate_v<ver>_P.pak with repak (V11, zlib); then the same for
+     mod/data/fieldkit_patches.json -> build/Fieldkit_v<ver>_P.pak (Custom World Settings rows)
+  7. (--install) copy both paks + both Lua mods into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -34,11 +42,18 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ORIGINAL = REPO / "data" / "original"
+PREVIOUS = REPO / "data" / "previous"   # the extraction before the last --extract: merge baseline
 INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
+FIELDKIT_MOD = REPO / "mod" / "ue4ss" / "Fieldkit"   # second mod: quality-of-life features, one file each
+LEGACY_MODS = ("TameRegen",)                         # earlier names; --install removes their game copies
+FIELDKIT_PATCHES = REPO / "mod" / "data" / "fieldkit_patches.json"  # its Custom World Settings rows
+AISETUP_TABLE = "AI/D_AISetup.json"
+MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
 PAK_ROOT = BUILD / "pak"
+FIELDKIT_PAK_ROOT = BUILD / "fieldkit_pak"
 VERSION_FILE = REPO / "VERSION"
 
 
@@ -63,6 +78,37 @@ def pak_name(version: str) -> str:
 GAME = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus")
 GAME_MODS = GAME / "Content" / "Paks" / "mods"
 UE4SS_MODS = GAME / "Binaries" / "Win64" / "ue4ss" / "Mods"
+GAME_DATA_PAK = GAME / "Content" / "Data" / "data.pak"
+DATA_MOUNT_PREFIX = "C:/BA/work/92bbbfa44df12262/Temp/Data/"  # odd build-machine path inside data.pak
+
+
+def extract_game_tables(repak: Path) -> None:
+    """Re-extract data/original from the game's data.pak (after a game update)."""
+    if not GAME_DATA_PAK.exists():
+        sys.exit(f"!! game data.pak not found: {GAME_DATA_PAK}")
+    if ORIGINAL.exists():
+        # Keep the outgoing tables: --merge-installed uses them to tell an installed mod's real
+        # changes from its stale copies of rows the game update changed.
+        if PREVIOUS.exists():
+            shutil.rmtree(PREVIOUS)
+        ORIGINAL.rename(PREVIOUS)
+        print(f"   previous tables kept at {PREVIOUS}")
+    ORIGINAL.mkdir(parents=True)
+    subprocess.run([str(repak), "unpack", "-s", DATA_MOUNT_PREFIX, "-o", str(ORIGINAL), str(GAME_DATA_PAK)], check=True)
+    print(f"   extracted {sum(1 for _ in ORIGINAL.rglob('*.json'))} tables from {GAME_DATA_PAK}")
+
+
+def check_tables_current() -> None:
+    """Our paks replace whole tables, so tables extracted before a game update silently undo that
+    update (2026-09-04: Sulfur lost its icon because its texture was renamed). Refuse to build."""
+    probe = ORIGINAL / "Items" / "D_ItemsStatic.json"
+    if not GAME_DATA_PAK.exists() or not probe.exists():
+        return
+    if GAME_DATA_PAK.stat().st_mtime > probe.stat().st_mtime:
+        sys.exit(
+            "!! the game's data.pak is newer than data/original: Icarus updated since the tables were extracted.\n"
+            "   Re-extract first:  python tools/build.py --extract   (then build as usual)"
+        )
 
 RECIPE_TABLE = "Crafting/D_ProcessorRecipes.json"
 RECIPE_ROW = "Massgate_"  # prefix: every recipe we add
@@ -77,6 +123,8 @@ TRAIT_TABLE_OVERRIDES = {
     "EnergyFlow": "D_Energy",
     "ItemStaticData": "D_ItemsStatic",
     "SlotTemplate": "D_TagQueries",
+    "Stat": "D_Stats",
+    "StatCategory": "D_StatCategories",
 }
 
 
@@ -99,8 +147,68 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(text.replace("\n", "\r\n") + "\r\n", encoding="utf-8")
 
 
-def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
-    """Return {rel_path: (rel_path, table_json)} for every original table."""
+def row_json(row: dict) -> str:
+    return json.dumps(row, sort_keys=True, ensure_ascii=False)
+
+
+def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict | None, pak_dir: Path,
+                          quiet: bool) -> None:
+    """Row-level overlay of an installed mod's full-table copy onto the fresh game table.
+
+    Installed mods ship whole tables built against the game version of their day. Copying the
+    table wholesale would drag their stale copies of rows the game has since changed into our
+    pak (2026-09-04: Sulfur and Gold Ore lost their icons that way). So: rows the mod adds are
+    taken; rows that differ from the fresh game row are taken only if they also differ from the
+    PREVIOUS game version (data/previous, snapshotted by --extract) -- a row equal to the old
+    game row is just the mod's untouched copy of it. Without a baseline every differing row is
+    taken and listed, so the ambiguity is at least visible."""
+    rows = table["Rows"]
+    index = {r["Name"]: i for i, r in enumerate(rows)}
+    prev_rows = {r["Name"]: r for r in (previous or {}).get("Rows", [])} if previous else None
+    added, applied, skipped, unsure, conflicts = 0, [], 0, [], []
+    for mod_row in mod_table.get("Rows", []):
+        name = mod_row["Name"]
+        if name not in index:
+            rows.append(mod_row)
+            index[name] = len(rows) - 1
+            added += 1
+            continue
+        fresh = rows[index[name]]
+        if row_json(fresh) == row_json(mod_row):
+            continue
+        prev = prev_rows.get(name) if prev_rows is not None else None
+        if prev is None:
+            unsure.append(name)  # no baseline: take the mod's row whole
+            rows[index[name]] = mod_row
+            applied.append(name)
+            continue
+        # Three-way merge per field: start from the fresh game row, apply only the fields the mod
+        # actually changed relative to the previous game version. (Deyvid's AIO changes Weight and
+        # MaxStack on nearly every item; a whole-row comparison would drag its stale Icon along.)
+        # A field the mod's row simply lacks is not a change: modding tools drop fields (Different
+        # Pouch's Kiwi bait row has no Icon), and deleting a field is never what a mod means.
+        merged = dict(fresh)
+        for field in mod_row:
+            if row_json(mod_row[field]) != row_json(prev.get(field)):
+                if row_json(fresh.get(field)) != row_json(prev.get(field)):
+                    conflicts.append(f"{name}.{field}")  # game and mod both changed it; mod wins
+                merged[field] = mod_row[field]
+        if row_json(merged) == row_json(fresh):
+            skipped += 1  # only stale copies of rows the game has since changed
+        else:
+            rows[index[name]] = merged
+            applied.append(name)
+    if not quiet:
+        print(f"   overlay {key:45s} <- {pak_dir.name}: +{added} rows, {len(applied)} changed"
+              + (f", {skipped} stale game rows ignored" if skipped else "")
+              + (f", {len(conflicts)} field(s) changed by both game and mod (mod wins): {conflicts[:4]}" if conflicts else "")
+              + (f", no baseline for {len(unsure)}: {unsure[:6]}{'...' if len(unsure) > 6 else ''}" if unsure else ""))
+
+
+def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] | None = None) -> dict[str, tuple[Path, dict]]:
+    """Return {rel_path: (rel_path, table_json)} for every original table (fresh copies each call).
+    Installed-mod overlays are applied only to the tables in `only` (the ones our pak will ship);
+    the rest never leave this process, so merging them would only add noise."""
     tables: dict[str, tuple[Path, dict]] = {}
     for path in sorted(ORIGINAL.rglob("*.json")):
         rel = path.relative_to(ORIGINAL)
@@ -115,11 +223,15 @@ def load_base_tables(merge_installed: bool) -> dict[str, tuple[Path, dict]]:
             parts = [p.lower() for p in path.relative_to(pak_dir).parts]
             if "data" not in parts:
                 continue
-            rel = Path(*path.relative_to(pak_dir).parts[parts.index("data") + 1 :])
+            # the LAST "data" folder: the mod's own folder may sit under data/installed
+            idx = len(parts) - 1 - parts[::-1].index("data")
+            rel = Path(*path.relative_to(pak_dir).parts[idx + 1 :])
             key = str(rel).replace("\\", "/")
-            if key in tables:
-                tables[key] = (rel, read_json(path))
-                print(f"   overlay {key:45s} <- {pak_dir.name}")
+            if key not in tables or (only is not None and key not in only):
+                continue
+            prev_path = PREVIOUS / rel
+            previous = read_json(prev_path) if prev_path.exists() else None
+            merge_installed_table(key, tables[key][1], read_json(path), previous, pak_dir, quiet)
     return tables
 
 
@@ -184,29 +296,12 @@ def apply_patches(tables: dict[str, tuple[Path, dict]], patches: dict) -> list[t
     return introduced
 
 
-DEV_EXOTICS_RECIPE = {
-    "Name": "Massgate_Dev_Exotics",
-    "RequiredMillijoules": 1000,
-    "RecipeSets": [{"RowName": "Character", "DataTableName": "D_RecipeSets"}],
-    "Inputs": [{"Element": {"RowName": "Fiber", "DataTableName": "D_ItemsStatic"}, "Count": 1}],
-    "Outputs": [
-        {"Element": {"RowName": "ExoticsReward_200", "DataTableName": "D_ItemTemplate"}, "Count": 1,
-         "DynamicProperties": [], "Alterations": []}
-    ],
-    "Audio": {"RowName": "MachiningBench"},
-}
-
-
 def apply_dev_mode(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, dict]]) -> None:
     """Make the gates free: no blueprint, 1 Fiber, craftable from the inventory.
-    Also adds a dev-only recipe turning 1 Fiber into 200 Exotics so buffers and trip
-    costs can be tested on an early-game character."""
-    _, recipes = tables[RECIPE_TABLE]
-    recipes["Rows"].append(DEV_EXOTICS_RECIPE)
-    introduced.append((RECIPE_TABLE, DEV_EXOTICS_RECIPE))
+    (Trip costs are switched off by the Lua side when DevMode is true.)"""
     count = 0
     for key, row in introduced:
-        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW) and row["Name"] != DEV_EXOTICS_RECIPE["Name"]:
+        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW):
             row.pop("Requirement", None)
             row["RequiredMillijoules"] = 1000
             row["RecipeSets"] = [
@@ -260,13 +355,38 @@ def validate(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[str, d
     print(f"   validated {len(introduced)} rows, all references resolve")
 
 
-def pack(repak: Path, version: str) -> Path:
-    for old in BUILD.glob("Massgate*_P.pak"):
+def pack(repak: Path, version: str, pak_root: Path = PAK_ROOT, prefix: str = "Massgate") -> Path:
+    for old in BUILD.glob(f"{prefix}*_P.pak"):
         old.unlink()
-    out = BUILD / pak_name(version)
-    cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(PAK_ROOT), str(out)]
+    out = BUILD / f"{prefix}_v{version}_P.pak"
+    cmd = [str(repak), "pack", "--version", "V11", "--compression", "Zlib", str(pak_root), str(out)]
     subprocess.run(cmd, check=True)
     return out
+
+
+def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: list[str]) -> None:
+    if pak_root.exists():
+        shutil.rmtree(pak_root)
+    for key in touched:
+        rel, table = tables[key]
+        write_json(pak_root / "Icarus" / "Content" / "Data" / rel, table)
+        print(f"   {key}")
+
+
+def build_fieldkit_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
+    """Fieldkit's own pak: the Custom World Settings rows from fieldkit_patches.json. Built on a fresh
+    copy of the base tables. Both paks replace whole tables and load alphabetically, so a table
+    touched by both would lose Massgate's rows; refuse that."""
+    fk_patches = read_json(FIELDKIT_PATCHES)
+    tables = load_base_tables(merge_installed, only={p["table"] for p in fk_patches["tables"]})
+    introduced = apply_patches(tables, fk_patches)
+    touched = sorted({key for key, _ in introduced})
+    overlap = sorted(set(touched) & set(massgate_touched))
+    if overlap:
+        sys.exit(f"!! fieldkit_patches.json and patches.json both touch {overlap}; move the rows into one file")
+    validate(tables, introduced)
+    write_tables(FIELDKIT_PAK_ROOT, tables, touched)
+    return pack(repak, version, FIELDKIT_PAK_ROOT, "Fieldkit")
 
 
 def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str) -> None:
@@ -280,6 +400,120 @@ def write_config(scripts_dir: Path, dev: bool, channels: list[str], version: str
         "}\n",
         encoding="utf-8",
     )
+
+
+def mount_classes(tables: dict[str, tuple[Path, dict]]) -> list[str]:
+    """Actor classes the game spawns under /Game/BP/Mounts/ (mounts, pets, farm animals), from D_AISetup.
+    Fieldkit watches these in addition to their common base class BP_Mount_Base_C."""
+    _, table = tables[AISETUP_TABLE]
+    return sorted({
+        str(row["ActorClass"]) for row in table.get("Rows", [])
+        if str(row.get("ActorClass", "")).startswith(MOUNT_CLASS_PREFIX)
+    })
+
+
+TALENTS_TABLE = "Talents/D_Talents.json"
+REGEN_STAT_KEY = '(Value="BaseHealthRegen_+%")'
+
+
+def regen_talents(tables: dict[str, tuple[Path, dict]]) -> dict[str, list[int]]:
+    """The creature talent 'Nurtured Recovery' (one row per species, e.g.
+    Creature_Base_HealthRegeneration_Buffalo): row name -> the health-regen bonus of each rank.
+    Fieldkit scales its heal by the unlocked rank's share of the top rank."""
+    _, table = tables[TALENTS_TABLE]
+    found: dict[str, list[int]] = {}
+    for row in table.get("Rows", []):
+        if not str(row.get("TalentTree", {}).get("RowName", "")).startswith("Creature_"):
+            continue
+        rewards = row.get("Rewards") or []
+        stats = [r.get("GrantedStats", {}) for r in rewards]
+        if rewards and all(list(s.keys()) == [REGEN_STAT_KEY] for s in stats):
+            found[row["Name"]] = [int(s[REGEN_STAT_KEY]) for s in stats]
+    if not found:
+        sys.exit("!! no creature health-regen talents found in D_Talents; the table format changed?")
+    return found
+
+
+ITEMS_TABLE = "Items/D_ItemsStatic.json"
+ITEMABLE_TABLE = "Traits/D_Itemable.json"
+LOCTEXT_RE = re.compile(r'^(?:NSLOCTEXT\("[^"]*",\s*"[^"]*",\s*|INVTEXT\()"((?:[^"\\]|\\.)*)"\)$')
+
+
+def display_text(value: object) -> str:
+    """The user-visible string of an FText export ('NSLOCTEXT("ns", "key", "Fiber")' or 'INVTEXT("x")')."""
+    text = str(value or "")
+    match = LOCTEXT_RE.match(text)
+    return match.group(1).encode().decode("unicode_escape") if match else text
+
+
+def item_names(tables: dict[str, tuple[Path, dict]]) -> dict[str, str]:
+    """Item row name -> display name (D_ItemsStatic.Itemable -> D_Itemable.DisplayName), so Fieldkit
+    can show 'Wood' instead of 'Wood' row names or 'Item_Fiber' without struct-passing library calls."""
+    _, itemable = tables[ITEMABLE_TABLE]
+    names = {row["Name"]: display_text(row.get("DisplayName")) for row in itemable.get("Rows", [])}
+    _, items = tables[ITEMS_TABLE]
+    found: dict[str, str] = {}
+    for row in items.get("Rows", []):
+        name = names.get(str(row.get("Itemable", {}).get("RowName", "")))
+        if name:
+            found[row["Name"]] = name
+    if len(found) < 100:
+        sys.exit("!! fewer than 100 item display names found in D_ItemsStatic/D_Itemable; the table format changed?")
+    return found
+
+
+def lua_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ") + '"'
+
+
+def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]],
+                          items: dict[str, str]) -> None:
+    lua_classes = "".join(f'        "{c}",\n' for c in classes)
+    lua_talents = "".join(
+        f'        ["{name}"] = {{ {", ".join(str(v) for v in ranks)} }},\n' for name, ranks in sorted(talents.items())
+    )
+    lua_items = "".join(f"        [{lua_string(row)}] = {lua_string(name)},\n" for row, name in sorted(items.items()))
+    (scripts_dir / "config.lua").write_text(
+        "-- Written by tools/build.py. Edit the repo copy, not this file.\n"
+        "-- Tunables are documented in the repo's config.lua; keys deep-merge into main.lua's CONFIG.\n"
+        "return {\n"
+        f"    Version = \"{version}\",\n"
+        "    Tames = {\n"
+        "        -- every mount, pet and farm animal class from D_AISetup\n"
+        "        MountClasses = {\n"
+        f"{''.join('    ' + line + chr(10) for line in lua_classes.splitlines())}"
+        "        },\n"
+        "    },\n"
+        "    FeatureConfig = {\n"
+        "        tameregen = {\n"
+        "            -- Nurtured Recovery rows from D_Talents: per-rank regen bonus, used to scale the heal\n"
+        "            RegenTalents = {\n"
+        f"{''.join('        ' + line + chr(10) for line in lua_talents.splitlines())}"
+        "            },\n"
+        "        },\n"
+        "        stow = {\n"
+        "            -- item row -> display name, from D_ItemsStatic/D_Itemable (chest titles, messages)\n"
+        "            ItemNames = {\n"
+        f"{''.join('        ' + line + chr(10) for line in lua_items.splitlines())}"
+        "            },\n"
+        "        },\n"
+        "    },\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    # Pins and other per-prospect files live outside the mod folder (install replaces that folder).
+    data_dir = scripts_dir.parent.parent.parent / "FieldkitData" / "stow"
+    if scripts_dir.parent.parent == UE4SS_MODS:
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+
+def install_lua_mod(source: Path, write: callable) -> Path:
+    target = UE4SS_MODS / source.name
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    write(target / "Scripts")
+    return target
 
 
 RELEASE_README = """Massgate {version} for Icarus
@@ -297,49 +531,83 @@ Two parts, both required. Needs UE4SS 3.0.1 (the layout with Icarus\\Binaries\\W
 
 Everyone in a multiplayer session needs both parts. Dedicated servers must run UE4SS (Windows).
 
+Also in this zip, optional and independent: Fieldkit, a kit of quality-of-life features. Copy the
+folder "Fieldkit" next to "Massgate" in ue4ss\\Mods\\ and {fk_pak} into Paks\\mods\\ (remove any
+older Fieldkit or TameRegen files first). Every feature is switched on or off in game: Escape ->
+Custom World Settings (host only). Features: Tame Regeneration (tames set to Follow heal a share of
+their maximum health every second while out of combat, scaled by their Nurtured Recovery talent;
+Creatures section, with a rate row). Only the host / server needs the Lua; everyone needs the pak.
+
 Source, docs and issues: https://github.com/Septuran/Massgate
 """
 
 
-def package(pak: Path, dev: bool, channels: list[str], version: str) -> Path:
-    """Build the distributable zip: the pak, the Lua mod folder and a README."""
+def package(pak: Path, fk_pak: Path, dev: bool, channels: list[str], version: str, classes: list[str],
+            talents: dict[str, list[int]], items: dict[str, str]) -> Path:
+    """Build the distributable zip: both paks, both Lua mod folders and a README."""
     release_dir = BUILD / "release"
     staging = release_dir / f"Massgate_v{version}"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     shutil.copy2(pak, staging / pak.name)
+    shutil.copy2(fk_pak, staging / fk_pak.name)
     shutil.copytree(LUA_MOD, staging / LUA_MOD.name)
     write_config(staging / LUA_MOD.name / "Scripts", dev, channels, version)
-    (staging / "README.txt").write_text(RELEASE_README.format(version=version, pak=pak.name), encoding="utf-8")
+    shutil.copytree(FIELDKIT_MOD, staging / FIELDKIT_MOD.name)
+    write_fieldkit_config(staging / FIELDKIT_MOD.name / "Scripts", version, classes, talents, items)
+    (staging / "README.txt").write_text(
+        RELEASE_README.format(version=version, pak=pak.name, fk_pak=fk_pak.name), encoding="utf-8")
     archive = shutil.make_archive(str(release_dir / f"Massgate_v{version}"), "zip", root_dir=staging)
     return Path(archive)
 
 
-def install(pak: Path, dev: bool, channels: list[str], version: str) -> None:
+def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str], version: str,
+            classes: list[str], talents: dict[str, list[int]], items: dict[str, str]) -> None:
+    """Copy the paks (unless None: --lua-only) and both Lua mods into the game."""
     if not GAME_MODS.exists():
         sys.exit(f"!! game mods folder not found: {GAME_MODS}")
     if not UE4SS_MODS.exists():
         sys.exit(f"!! UE4SS Mods folder not found: {UE4SS_MODS}")
-    try:
-        # Only one Massgate pak may be installed at a time; the name carries the version.
-        for old in GAME_MODS.glob("Massgate*_P.pak"):
-            old.unlink()
-        shutil.copy2(pak, GAME_MODS / pak.name)
-    except PermissionError:
-        sys.exit(
-            "!! cannot replace the installed pak: Icarus is running and holds it open.\n"
-            "   Close the game, then run:  python tools/build.py --merge-installed"
-            + (" --dev" if dev else "") + " --install"
-        )
-    print(f"   pak      -> {GAME_MODS / pak.name}")
+    stale: list[str] = []
+    for prefix, new in (("Massgate", pak), ("Fieldkit", fk_pak)):
+        if new is None:
+            continue
+        try:
+            # Only one pak per mod may be installed at a time; the name carries the version.
+            for old in GAME_MODS.glob(f"{prefix}*_P.pak"):
+                old.unlink()
+            shutil.copy2(new, GAME_MODS / new.name)
+        except PermissionError:
+            # A mounted pak is held open by the running game. Install everything else and say so.
+            stale.append(prefix)
+            print(f"!! {prefix} pak NOT replaced: Icarus is running and holds the installed one open")
+            continue
+        print(f"   pak      -> {GAME_MODS / new.name}")
 
-    target = UE4SS_MODS / LUA_MOD.name
-    if target.exists():
-        shutil.rmtree(target)
-    shutil.copytree(LUA_MOD, target)
-    write_config(target / "Scripts", dev, channels, version)
+    for legacy in LEGACY_MODS:
+        old_lua = UE4SS_MODS / legacy
+        if old_lua.exists():
+            shutil.rmtree(old_lua)
+            print(f"   removed old lua mod {old_lua}")
+        for old in GAME_MODS.glob(f"{legacy}*_P.pak"):
+            try:
+                old.unlink()
+                print(f"   removed old pak {old}")
+            except PermissionError:
+                stale.append(legacy)
+                print(f"!! old {legacy} pak NOT removed: Icarus is running and holds it open")
+
+    target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
+    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents, items))
+    print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents, "
+          f"{len(items)} item names)")
+    if stale:
+        sys.exit(
+            f"!! stale pak(s) still installed: {', '.join(stale)}. Close the game, then run:\n"
+            "   python tools/build.py --merge-installed" + (" --dev" if dev else "") + " --install"
+        )
 
 
 def main() -> int:
@@ -348,11 +616,32 @@ def main() -> int:
     ap.add_argument("--dev", action="store_true")
     ap.add_argument("--install", action="store_true")
     ap.add_argument("--package", action="store_true", help="build the release zip in build/release/")
+    ap.add_argument("--lua-only", action="store_true",
+                    help="with --install: refresh only the Lua mods (no pak build; works while Icarus runs)")
+    ap.add_argument("--extract", action="store_true",
+                    help="re-extract data/original from the game's data.pak first (after a game update)")
     ap.add_argument("--repak", type=Path, default=REPO / "tools" / "bin" / "repak.exe")
     args = ap.parse_args()
 
+    if args.extract:
+        if not args.repak.exists():
+            sys.exit(f"!! repak not found at {args.repak}")
+        print("0. extracting game tables")
+        extract_game_tables(args.repak)
     if not ORIGINAL.exists():
-        sys.exit("!! data/original missing: unpack data.pak first (see README)")
+        sys.exit("!! data/original missing: run  python tools/build.py --extract")
+    check_tables_current()
+    if args.lua_only:
+        if not args.install or args.package:
+            sys.exit("!! --lua-only only makes sense together with --install (and not --package)")
+        tables = load_base_tables(False)
+        patches = read_json(PATCHES)
+        apply_patches(tables, expand_channels(patches))  # so Massgate's own items get display names too
+        version = build_version(args.dev)
+        print(f"installing Lua mods only, version {version}")
+        install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables),
+                item_names(tables))
+        return 0
     if not args.repak.exists():
         sys.exit(f"!! repak not found at {args.repak}")
     if args.package:
@@ -364,10 +653,10 @@ def main() -> int:
         if git("status", "--porcelain"):
             sys.exit("!! --package needs a clean git tree: commit first so the version number is reproducible")
 
-    print("1. loading base tables")
-    tables = load_base_tables(args.merge_installed)
-    print("2. applying patches")
     patches = read_json(PATCHES)
+    print("1. loading base tables")
+    tables = load_base_tables(args.merge_installed, only={p["table"] for p in patches["tables"]})
+    print("2. applying patches")
     introduced = apply_patches(tables, expand_channels(patches))
     touched = sorted({key for key, _ in introduced})
     if args.dev:
@@ -376,22 +665,21 @@ def main() -> int:
     print("4. validating references")
     validate(tables, introduced)
     print("5. writing tables")
-    if PAK_ROOT.exists():
-        shutil.rmtree(PAK_ROOT)
-    for key in touched:
-        rel, table = tables[key]
-        write_json(PAK_ROOT / "Icarus" / "Content" / "Data" / rel, table)
-        print(f"   {key}")
+    write_tables(PAK_ROOT, tables, touched)
     version = build_version(args.dev)
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
+    print("6b. Fieldkit pak (Custom World Settings rows)")
+    fk_pak = build_fieldkit_pak(args.repak, args.merge_installed, version, touched)
+    print(f"   -> {fk_pak} ({fk_pak.stat().st_size:,} bytes)")
+    classes, talents, items = mount_classes(tables), regen_talents(tables), item_names(tables)
     if args.install:
         print("7. installing")
-        install(out, args.dev, patches.get("channels", []), version)
+        install(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents, items)
     if args.package:
         print("8. packaging")
-        archive = package(out, args.dev, patches.get("channels", []), version)
+        archive = package(out, fk_pak, args.dev, patches.get("channels", []), version, classes, talents, items)
         print(f"   -> {archive} ({archive.stat().st_size:,} bytes)")
     return 0
 
