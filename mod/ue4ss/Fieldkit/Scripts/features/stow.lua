@@ -628,26 +628,55 @@ end
 -- those whose projection component sits on a pinned chest.
 local tooltips = {}        -- tooltip widget full name -> { widget, entry (resolved once), checked }
 
-local function applyTooltip(widget, entry)
-    local rec = pinsOf(entry)
-    if not rec or not valid(widget) then return end
+-- The game rewrites the tooltip's own text blocks every frame, so the pin line lives in a text
+-- block of ours, inserted once next to the description and only written when the target changes.
+local function tooltipLabel(rec)
+    if valid(rec.label) then return rec.label end
+    if rec.labelFailed then return nil end
     local ok, err = pcall(function()
-        local block = widget.Description
-        if not valid(block) then error("no Description block") end
-        local current = ""
-        pcall(function() current = block:GetText():ToString() end)
-        if current:find("Pinned:", 1, true) then return end
-        local line = "Pinned: " .. (joinNames(rec.rows))
-        local text = makeText(current ~= "" and (current .. "\n" .. line) or line)
-        if not text then return end
-        block:SetText(text)
-        block:SetVisibility(4) -- SelfHitTestInvisible
-        if not warned.tooltipShown then
-            warned.tooltipShown = true
-            L.dbg("tooltip pins shown for %s (description was %q)", entry.name, current)
+        local desc = rec.widget.Description
+        if not valid(desc) then error("no Description block") end
+        local parent = desc:GetParent()
+        if not valid(parent) then error("description has no parent panel") end
+        local cls = StaticFindObject("/Script/UMG.TextBlock")
+        if not valid(cls) then error("TextBlock class not found") end
+        local block = StaticConstructObject(cls, rec.widget)
+        if not valid(block) then error("could not construct a TextBlock") end
+        local parentClass = core.fullName(parent):match("^(%S+)") or "?"
+        if parentClass:find("VerticalBox", 1, true) then parent:AddChildToVerticalBox(block)
+        elseif parentClass:find("HorizontalBox", 1, true) then parent:AddChildToHorizontalBox(block)
+        elseif parentClass:find("Overlay", 1, true) then parent:AddChildToOverlay(block)
+        else error("description sits in a " .. parentClass .. ", which cannot take another child") end
+        pcall(function() block.Font = desc.Font end)             -- same face as the description, if the copy works
+        pcall(function() block.ColorAndOpacity = desc.ColorAndOpacity end)
+        pcall(function() block:SetAutoWrapText(true) end)
+        block:SetVisibility(1) -- Collapsed until there is something to show
+        rec.label = block
+        L.dbg("tooltip label added to %s under a %s", core.shortName(rec.widget), parentClass)
+    end)
+    if not ok then
+        rec.labelFailed = true
+        once("tooltipLabel", "tooltip pin line not added (%s)", tostring(err))
+    end
+    return rec.label
+end
+
+-- Show `line` (or nothing when nil) in the tooltip's pin label; writes only on change.
+local function showTooltipLine(rec, line)
+    if rec.shown == line then return end
+    local block = tooltipLabel(rec)
+    if not block then return end
+    local ok, err = pcall(function()
+        if line then
+            local text = makeText(line)
+            if not text then return end
+            block:SetText(text)
+            block:SetVisibility(4) -- SelfHitTestInvisible
+        else
+            block:SetVisibility(1) -- Collapsed
         end
     end)
-    if not ok then once("tooltip", "tooltip update failed: %s", tostring(err)) end
+    if ok then rec.shown = line else once("tooltipShow", "tooltip pin line update failed: %s", tostring(err)) end
 end
 
 -- The container a tooltip widget shows right now. The projection component
@@ -684,9 +713,12 @@ local function pollTooltips()
                 rec.entry = entry
                 L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
             end
-            if entry and valid(entry.actor) and pinsOf(entry) then
+            local pinsRec = entry and valid(entry.actor) and pinsOf(entry) or nil
+            if pinsRec then
                 pinned = pinned + 1
-                applyTooltip(rec.widget, entry)
+                showTooltipLine(rec, "Pinned: " .. (joinNames(pinsRec.rows)))
+            elseif rec.shown then
+                showTooltipLine(rec, nil)
             end
         end
     end
