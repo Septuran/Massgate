@@ -86,8 +86,9 @@ Features:
   that crafting emptied still attracts its item. **Shift+E** then moves every backpack stack
   whose type is pinned on a chest within range (default 30 m) into that chest, nearest first,
   spilling into the next pinned chest when one is full; the hotbar is never touched. The
-  pins show in the chest window title, in the in-world tooltip when you look at the chest,
-  and in the message lines after pinning and depositing. Pins are saved per prospect in
+  pins show in the chest window title (short form) and on the Pin bar (full list), as an
+  extra line in the in-world tooltip when you look at the chest, and in the message lines
+  after pinning and depositing. Pins are saved per prospect in
   `<ue4ss>\FieldkitData\stow\`, keyed by the chest's class and position (pick a chest up and
   place it again and it starts unpinned). Moves go through the game's own server-side
   shift-item action, so it works as a client too. If NearbyCrafting is installed, set
@@ -100,8 +101,14 @@ settingsChanged, console, status }` (see the header of `main.lua`), its id in
 switch, bound to a hidden world stat row in `D_Stats`, names prefixed `Fieldkit_`).
 
 `--install` installs the Lua next to Massgate and the pak next to the Massgate pak, and
-removes the old TameRegen copies. `--install --lua-only` refreshes just the Lua mods without
-touching either pak, which also works while the game runs (UE4SS reloads Lua with Ctrl+R).
+removes the old TameRegen copies. Always pass `--merge-installed` when installing on a game
+that has other table mods (both paks replace whole tables and load after most mods
+alphabetically; an un-merged install silently reverts those mods' rows). `--install
+--lua-only` refreshes just the Lua mods without touching either pak, which also works while
+the game runs: UE4SS reloads Lua with Ctrl+R provided `EnableHotReloadSystem = 1` in
+`ue4ss\UE4SS-settings.ini`. Fieldkit prints "Fieldkit v... loaded: ..." in the chat area on
+every load, and walks the object table once after a reload to pick up the actors that
+already exist (spawn notifications only cover new ones).
 Per-feature tunables are documented in `mod/ue4ss/Fieldkit/Scripts/config.lua`. Console:
 `fieldkit` (overview), `fieldkit tames`, `fieldkit tameregen` (per-tame health and why each
 is or is not healing), `fieldkit tameregen rate <percent per second>` (session override),

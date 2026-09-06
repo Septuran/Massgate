@@ -636,6 +636,7 @@ def main() -> int:
             sys.exit("!! --lua-only only makes sense together with --install (and not --package)")
         tables = load_base_tables(False)
         patches = read_json(PATCHES)
+        apply_patches(tables, expand_channels(patches))  # so Massgate's own items get display names too
         version = build_version(args.dev)
         print(f"installing Lua mods only, version {version}")
         install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables),
