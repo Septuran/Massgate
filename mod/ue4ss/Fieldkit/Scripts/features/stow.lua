@@ -79,7 +79,6 @@ local L
 local core
 local enabled = true
 local containers = {}      -- actor full name -> { actor, key, name, inv }
-local registryGen = 0      -- bumped on every registration; tooltips re-check "not a container" widgets after it changes
 local pins = {}            -- chest key -> { rows = { [row] = true }, name = "Wood Crate" }
 local pinsProspect = nil   -- prospect id the pins table was loaded for
 local pinsDirty = false
@@ -216,7 +215,6 @@ local function registerContainer(actor, source)
     if excluded(className) then return end
     local entry = { actor = actor, className = className, name = chestName(actor, className) }
     containers[fullName] = entry
-    registryGen = registryGen + 1
     core.setContext(actor)
     L.dbg("container registered: %s (%s) via %s", entry.name, className, source)
 end
@@ -652,14 +650,19 @@ local function applyTooltip(widget, entry)
     if not ok then once("tooltip", "tooltip update failed: %s", tostring(err)) end
 end
 
--- The container a tooltip widget shows: the owner of its projection component.
-local function tooltipEntryOf(widget)
-    local projection, owner
-    pcall(function() projection = widget.ProjectionActor end)
-    if not valid(projection) then return nil, false end
-    pcall(function() owner = projection:GetOwner() end)
-    if not valid(owner) then return nil, true end
-    return containers[core.fullName(owner)], true
+-- The container a tooltip widget shows right now. The projection component
+-- (BP_UIProjectionComponent_Tooltip) is one shared helper that follows the player's aim; its
+-- CurrentItem is the actor in view, so this is re-read on every poll (one property read).
+local function tooltipEntryOf(rec)
+    if not valid(rec.projection) then
+        rec.projection = nil
+        pcall(function() rec.projection = rec.widget.ProjectionActor end)
+        if not valid(rec.projection) then return nil, false end
+    end
+    local target
+    pcall(function() target = rec.projection.CurrentItem end)
+    if not valid(target) then return nil, true end
+    return containers[core.fullName(target)], true
 end
 
 -- Bounded by design: a widget is resolved once (two property reads) and forgotten when it is not
@@ -674,30 +677,16 @@ local function pollTooltips()
     for name, rec in pairs(tooltips) do
         if not valid(rec.widget) then
             tooltips[name] = nil
-        elseif rec.entry == nil or (rec.entry == false and rec.gen ~= registryGen) then
-            -- Unresolved, or resolved as "not a container" before more containers registered.
-            local entry, known = tooltipEntryOf(rec.widget)
-            if known then
-                if entry then
-                    L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry.name)
-                    rec.entry = entry
-                else
-                    if rec.entry == nil then L.dbg("tooltip %s -> not a container (yet)", core.shortName(rec.widget)) end
-                    rec.entry, rec.gen = false, registryGen
-                end
-            end
-            tracked = tracked + 1
-        elseif rec.entry == false then
-            tracked = tracked + 1
         else
             tracked = tracked + 1
-            if valid(rec.entry.actor) then
-                if pinsOf(rec.entry) then
-                    pinned = pinned + 1
-                    applyTooltip(rec.widget, rec.entry)
-                end
-            else
-                tooltips[name] = nil
+            local entry = tooltipEntryOf(rec)
+            if entry ~= rec.entry then
+                rec.entry = entry
+                L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
+            end
+            if entry and valid(entry.actor) and pinsOf(entry) then
+                pinned = pinned + 1
+                applyTooltip(rec.widget, entry)
             end
         end
     end
@@ -897,7 +886,8 @@ function F.console(_, params, Ar)
     Ar:Log("[Fieldkit:stow] " .. F.status())
     local controller = core.controller()
     local pawn
-    pcall(function() pawn = controller:GetPawn() end)
+    pcall(function() pawn = controller.Pawn end)
+    if not valid(pawn) then pcall(function() pawn = controller:K2_GetPawn() end) end
     local origin = valid(pawn) and locationOf(pawn) or nil
     local list = {}
     for _, entry in pairs(containers) do
