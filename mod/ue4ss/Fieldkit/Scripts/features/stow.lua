@@ -669,8 +669,14 @@ local function tooltipLabel(rec)
         elseif parentClass:find("HorizontalBox", 1, true) then parent:AddChildToHorizontalBox(block)
         elseif parentClass:find("Overlay", 1, true) then parent:AddChildToOverlay(block)
         else error("description sits in a " .. parentClass .. ", which cannot take another child") end
-        pcall(function() block.Font = desc.Font end)             -- same face as the description, if the copy works
-        pcall(function() block.ColorAndOpacity = desc.ColorAndOpacity end)
+        -- Same face as the description, copied FIELD BY FIELD. Never assign the whole Font struct:
+        -- FSlateFontInfo carries a shared pointer reflection does not see, so a struct copy is a raw
+        -- byte copy that corrupts the font's reference count and crashes Slate layout later
+        -- (SBoxPanel::ComputeDesiredSize, 2026-09-06).
+        pcall(function() block.Font.FontObject = desc.Font.FontObject end)
+        pcall(function() block.Font.TypefaceFontName = desc.Font.TypefaceFontName end)
+        pcall(function() block.Font.Size = desc.Font.Size end)
+        pcall(function() block.ColorAndOpacity.SpecifiedColor = desc.ColorAndOpacity.SpecifiedColor end)
         pcall(function() block:SetAutoWrapText(true) end)
         block:SetVisibility(1) -- Collapsed until there is something to show
         rec.label = block
