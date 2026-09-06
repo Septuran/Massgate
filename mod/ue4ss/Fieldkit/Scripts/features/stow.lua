@@ -64,6 +64,7 @@ local CONFIG = {
     CloseHook          = "/Game/UI/Components/UMG_IcarusLinkedActorPanel.UMG_IcarusLinkedActorPanel_C:ClosePanel",
     TooltipClass       = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C",
     TooltipPollMs      = 300,     -- how often the visible tooltips get their pin line
+    TooltipBudgetMs    = 2,       -- a poll slower than this three times switches the tooltip pins off
     ButtonClass        = "/Game/UI/Components/UMG_BasicButton_2.UMG_BasicButton_2_C",
     ButtonClickHook    = "/Game/UI/Components/UMG_ButtonBase.UMG_ButtonBase_C:OnClicked",
     WidgetLibrary      = "/Script/UMG.Default__WidgetBlueprintLibrary",
@@ -659,23 +660,45 @@ local function tooltipEntryOf(widget)
     return containers[core.fullName(owner)], true
 end
 
+-- Bounded by design: a widget is resolved once (two property reads) and forgotten when it is not
+-- on a container; only widgets on PINNED chests do any work per poll (one text read, a write when
+-- the game reset it). The poll times itself and stops for good if it ever gets slow.
+local pollStats = { polls = 0, tracked = 0, pinnedWidgets = 0, slow = 0, lastMs = 0, worstMs = 0 }
+
 local function pollTooltips()
     if not CONFIG.Tooltip then return end
+    local started = os.clock()
+    local tracked, pinned = 0, 0
     for name, rec in pairs(tooltips) do
         if not valid(rec.widget) then
             tooltips[name] = nil
-        else
-            if rec.entry == nil then
-                local entry, known = tooltipEntryOf(rec.widget)
-                if known then
-                    rec.entry = entry or false
-                    if not rec.logged then
-                        rec.logged = true
-                        L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
-                    end
-                end
+        elseif rec.entry == nil then
+            local entry, known = tooltipEntryOf(rec.widget)
+            if known then
+                L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
+                if entry then rec.entry = entry else tooltips[name] = nil end
             end
-            if rec.entry and valid(rec.entry.actor) then applyTooltip(rec.widget, rec.entry) end
+            tracked = tracked + 1
+        else
+            tracked = tracked + 1
+            if valid(rec.entry.actor) then
+                if pinsOf(rec.entry) then
+                    pinned = pinned + 1
+                    applyTooltip(rec.widget, rec.entry)
+                end
+            else
+                tooltips[name] = nil
+            end
+        end
+    end
+    local ms = (os.clock() - started) * 1000
+    pollStats.polls, pollStats.tracked, pollStats.pinnedWidgets, pollStats.lastMs = pollStats.polls + 1, tracked, pinned, ms
+    if ms > pollStats.worstMs then pollStats.worstMs = ms end
+    if ms > CONFIG.TooltipBudgetMs then
+        pollStats.slow = pollStats.slow + 1
+        if pollStats.slow >= 3 then
+            CONFIG.Tooltip = false
+            L.log("tooltip poll took %.1f ms three times (%d widgets); tooltip pins switched OFF for this session", ms, tracked)
         end
     end
 end
@@ -758,6 +781,7 @@ function F.init(coreRef, config)
             tooltips[core.fullName(widget)] = { widget = widget }
         end)
         LoopAsync(CONFIG.TooltipPollMs, function()
+            if not CONFIG.Tooltip then return true end -- switched off: the loop ends for good
             ExecuteInGameThread(function()
                 local ok, err = pcall(pollTooltips)
                 if not ok then once("tooltipPoll", "tooltip poll failed: %s", tostring(err)) end
@@ -873,7 +897,8 @@ function F.console(_, params, Ar)
     Ar:Log(string.format("[Fieldkit:stow] %d container(s) within %d m; open chest: %s; hooks: setup %s close %s tooltip %s button %s",
         #list, CONFIG.RangeMetres, openChest and openChest.name or "none",
         hooks[CONFIG.SetupHook] and "ok" or "no", hooks[CONFIG.CloseHook] and "ok" or "no",
-        (function() local n = 0; for _ in pairs(tooltips) do n = n + 1 end; return tostring(n) .. " widget(s)" end)(),
+        string.format("%s (%d tracked, %d pinned, last %.2f ms, worst %.2f ms, %d polls)", CONFIG.Tooltip and "polling" or "OFF",
+            pollStats.tracked, pollStats.pinnedWidgets, pollStats.lastMs, pollStats.worstMs, pollStats.polls),
         hooks[CONFIG.ButtonClickHook] and "ok" or "no"))
     Ar:Log("[Fieldkit:stow] usage: fieldkit stow | deposit | pins | pin|unpin <row> | clear | names <text> | scan")
 end
