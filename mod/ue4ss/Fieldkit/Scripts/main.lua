@@ -10,6 +10,9 @@
                     of combat, scaled by their Nurtured Recovery talent rank.
       * stow      : pin chests to item types (open the chest, Shift+P) and put the backpack away
                     into the pinned chests nearby with one key (Shift+E).
+      * scour     : the Sonic Scourer, a craftable powered device that pulses every few minutes
+                    and clears snow, sand and ash off building pieces in range, spending a
+                    matching cartridge.
 
     The core owns:
       * the tick (once a second on the game thread), with every feature call wrapped in pcall;
@@ -36,7 +39,7 @@
 
 local CONFIG = {
     TickMs               = 1000,
-    Features             = { "tameregen", "stow" },
+    Features             = { "tameregen", "stow", "scour" },
     FeatureConfig        = {},       -- per-feature overrides, e.g. FeatureConfig.tameregen.PercentPerSecond
     -- Custom World Settings
     CustomWorldSettings  = true,     -- false: features run on their own defaults only
@@ -196,6 +199,78 @@ if CONFIG.CustomWorldSettings then
         end)
     if ok then dbg("hooked %s", CONFIG.SubsystemSetHook)
     else log("could not hook %s (%s); settings still refresh every %d ticks", CONFIG.SubsystemSetHook, tostring(err), CONFIG.SettingsRefreshTicks) end
+end
+
+------------------------------------------------------------------------------------------
+-- Custom World Settings screen: the game's Int row (UMG_CustomGameSettings_Int_C) shows 0 in
+-- the number box beside its slider although the slider sits at the right value. The vanilla
+-- game has no visible Int row (its only one, SettingsVersion, is hidden), so that widget's spin
+-- box was never exercised. Push the value into the spin box when a row is built (the widget is
+-- watched by class; the screen is rebuilt every time it opens) and whenever the section reports
+-- a change (its OnSettingValueChanged is bound to the rows' delegate, so a hook on it fires).
+------------------------------------------------------------------------------------------
+
+local IntRow = {
+    WidgetClass = "/Game/UI/Hab/DropTerminal/CustomGameSettings/UMG_CustomGameSettings_Int.UMG_CustomGameSettings_Int_C",
+    SectionHook = "/Game/UI/Hab/DropTerminal/CustomGameSettings/UMG_CustomGameSettingsSection.UMG_CustomGameSettingsSection_C:OnSettingValueChanged",
+    SettleMs    = 250,
+}
+local intRows = {}   -- setting row name -> the row widget currently on screen
+local intHooked = false
+
+local function syncIntRow(widget, value, source)
+    if not valid(widget) then return end
+    local ok, err = pcall(function()
+        local spin = widget.SpinBox_Value
+        if not valid(spin) then error("no SpinBox_Value") end
+        local min, max
+        pcall(function() min, max = tonumber(widget.SettingData.MinIntValue), tonumber(widget.SettingData.MaxIntValue) end)
+        if source == "built" then
+            local sliderValue, spinValue = "?", "?"
+            pcall(function() sliderValue = tostring(widget.ValueSlider:GetValue()) end)
+            pcall(function() spinValue = tostring(spin:GetValue()) end)
+            dbg("Int row %s: value %s, range %s..%s, spin box showed %s, slider %s", widget.RowName:ToString(), tostring(value),
+                tostring(min), tostring(max), spinValue, sliderValue)
+        end
+        if min and max and max > min then
+            spin:SetMinValue(min); spin:SetMaxValue(max)
+            spin:SetMinSliderValue(min); spin:SetMaxSliderValue(max)
+        end
+        spin:SetValue(value)
+    end)
+    if not ok then dbg("Int row sync (%s) failed: %s", source, tostring(err)) end
+end
+
+local function hookIntRows()
+    if intHooked then return end
+    intHooked = true
+    local ok, err = pcall(RegisterHook, IntRow.SectionHook, function(self, rowName, newValue)
+        local name, value
+        pcall(function() name = rowName:get():ToString() end)
+        pcall(function() value = tonumber(newValue:get()) end)
+        local widget = name and intRows[name]
+        if widget and value then syncIntRow(widget, value, "changed") end
+    end)
+    if ok then dbg("hooked %s", IntRow.SectionHook)
+    else intHooked = false; dbg("could not hook %s (%s); Int row number boxes only sync when built", IntRow.SectionHook, tostring(err)) end
+end
+
+if CONFIG.CustomWorldSettings then
+    pcall(NotifyOnNewObject, IntRow.WidgetClass, function(widget)
+        -- RowName and InitialValue are set by the section after construction; wait for them.
+        ExecuteWithDelay(IntRow.SettleMs, function()
+            ExecuteInGameThread(function()
+                if not valid(widget) then return end
+                local name, value
+                pcall(function() name = widget.RowName:ToString() end)
+                pcall(function() value = tonumber(widget.InitialValue) end)
+                if not name or name == "" or name == "None" or value == nil then return end
+                intRows[name] = widget
+                syncIntRow(widget, value, "built")
+                hookIntRows()
+            end)
+        end)
+    end)
 end
 
 ------------------------------------------------------------------------------------------

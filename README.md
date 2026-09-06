@@ -94,6 +94,18 @@ Features:
   shift-item action, so it works as a client too. If NearbyCrafting is installed, set
   `DepositEnabled = false` in its ini (its Quick Deposit also sits on Shift+E) and keep its
   nearby crafting.
+- **scour** (Misc section): the **Sonic Scourer**, a craftable powered device (Fabricator:
+  steel, electronics, copper wire, composites) that clears the snow, sand and ash storms pile
+  onto building pieces. Every few minutes (default 180 s) while switched on and powered it
+  pulses and clears every piece within range (default 25 m) whose build-up has not grown for
+  a minute, so it waits a storm out (it re-reads the pieces every 20 s; the first pulse comes
+  about 80 s after placement). Each pulse spends one matching cartridge
+  from its hopper per ten pieces: **Thermal Cartridge** for snow, **Cyclone Filter** for sand,
+  **Scrubber Filter** for ash (Fabricator or Machining Bench, four per craft). Draws 1 kW.
+  Press interact to load cartridges, hold to switch it on or off. A `--dev` build needs neither
+  power nor cartridges. Placed as the small metal crate actor wearing the thumper mesh, the
+  same trick as Massgate's gates. Both mods now add rows to shared tables: `build.py` applies
+  both patch files to one table set and writes every touched table into both paks.
 
 Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
 settingsChanged, console, status }` (see the header of `main.lua`), its id in
@@ -101,7 +113,10 @@ settingsChanged, console, status }` (see the header of `main.lua`), its id in
 switch, bound to a hidden world stat row in `D_Stats`, names prefixed `Fieldkit_`).
 
 `--install` installs the Lua next to Massgate and the pak next to the Massgate pak, and
-removes the old TameRegen copies. Always pass `--merge-installed` when installing on a game
+removes the old TameRegen copies. Every install first copies all prospect saves to
+`build/save-backup-<timestamp>/` (the newest ten are kept), because a table pak can change
+what a save means; restore by copying a folder back over
+`%LOCALAPPDATA%\Icarus\Saved\PlayerData\<id>\Prospects` with the game closed. Always pass `--merge-installed` when installing on a game
 that has other table mods (both paks replace whole tables and load after most mods
 alphabetically; an un-merged install silently reverts those mods' rows). `--install
 --lua-only` refreshes just the Lua mods without touching either pak, which also works while
@@ -114,9 +129,12 @@ Per-feature tunables are documented in `mod/ue4ss/Fieldkit/Scripts/config.lua`. 
 is or is not healing), `fieldkit tameregen rate <percent per second>` (session override),
 `fieldkit stow` (containers in range and their pins), `fieldkit stow pins`, `fieldkit stow
 deposit`, `fieldkit stow pin|unpin <item row>` and `fieldkit stow clear` (on the open chest),
-`fieldkit stow names <text>` (item rows by display name), `fieldkit scan` / `fieldkit stow
-scan` (one-off object walks to pick up actors that spawned before the mod loaded, diagnostic
-only). Log prefixes `[Fieldkit]` and `[Fieldkit:<feature>]`.
+`fieldkit stow names <text>` (item rows by display name), `fieldkit scour` (each scourer's
+power, hopper, pieces in range and last pulse), `fieldkit scour pulse` (pulse now),
+`fieldkit scour probe` (nearest building pieces with raw build-up amount and type),
+`fieldkit scan` / `fieldkit stow scan` / `fieldkit scour scan` (one-off object walks to pick up
+actors that spawned before the mod loaded, diagnostic only). Log prefixes `[Fieldkit]` and
+`[Fieldkit:<feature>]`.
 
 ## Layout
 
