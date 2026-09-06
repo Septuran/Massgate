@@ -25,10 +25,11 @@
       Fieldkit_StowLearn  Bool  opening a chest adds its contents to its pins (default on)
 
     Game API used (all pointer/int parameters, no structs passed in; see README on struct crashes):
-      AIcarusPlayerControllerSurvival:ClientOpenContainer(Inventory, ...)   hooked: which chest is open
+      UMG_Chest_C (chest window): LinkedActor + Inventory say which chest is open (its
+        SetupObjectInventory is hooked; the controller's ClientOpenContainer never fires for chests),
+        UMG_DeviceInventory.UMG_DarkTitlebar:UpdateText for the title, InventoryVertBox for our button
       AIcarusController:OnServer_ShiftItemAuto(SourceInv, SourceSlot, DestInv)  the move itself
       UInventory:HasValidItemInSlot/GetItem(slot).ItemStaticData.RowName     what a slot holds
-      UMG_Chest_C (chest window): UMG_DeviceInventory.UMG_DarkTitlebar:UpdateText, InventoryVertBox
       UMG_TooltipInworld_C:UpdateTooltip(Actor)                             hooked: tooltip text
 
     Console: `fieldkit stow` (status + nearby chests), `fieldkit stow pins` (every pinned chest),
@@ -57,8 +58,8 @@ local CONFIG = {
     ContainerClass     = "/Game/BP/Objects/World/Items/Deployables/Containers/BP_DeployableContainerBase.BP_DeployableContainerBase_C",
     ScanClass          = "BP_DeployableContainerBase_C",
     InventoryComponent = "/Script/Icarus.InventoryComponent",
-    OpenHook           = "/Script/Icarus.IcarusPlayerControllerSurvival:ClientOpenContainer",
     ChestWidgetClass   = "/Game/UI/Windows/UMG_Chest.UMG_Chest_C",
+    SetupHook          = "/Game/UI/Windows/UMG_Chest.UMG_Chest_C:SetupObjectInventory",
     CloseHook          = "/Game/UI/Components/UMG_IcarusLinkedActorPanel.UMG_IcarusLinkedActorPanel_C:ClosePanel",
     TooltipHook        = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C:UpdateTooltip",
     ButtonClass        = "/Game/UI/Components/UMG_BasicButton_2.UMG_BasicButton_2_C",
@@ -68,6 +69,8 @@ local CONFIG = {
     SettingRangeRow    = "Fieldkit_StowRange",
     SettingLearnRow    = "Fieldkit_StowLearn",
     TitleSeparator     = "  -  ",
+    MaxTitleChars      = 20,      -- pin names that fit in the title bar next to the Type/Sort controls
+    VisualsHook        = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C:UpdateVisuals",
 }
 
 local L
@@ -258,20 +261,6 @@ local function countContainers()
     return n
 end
 
--- The registry entry an inventory belongs to, through its outer chain (inventory -> component -> actor).
-local function entryOfInventory(inv)
-    local obj = inv
-    for _ = 1, 5 do
-        if not valid(obj) then return nil end
-        local entry = containers[core.fullName(obj)]
-        if entry then return entry end
-        local ok, outer = pcall(function() return obj:GetOuter() end)
-        if not ok then return nil end
-        obj = outer
-    end
-    return nil
-end
-
 ------------------------------------------------------------------------------------------
 -- Pins: per prospect, saved as a Lua table file outside the mod folder (installs replace it)
 ------------------------------------------------------------------------------------------
@@ -428,8 +417,45 @@ end
 -- Pin and deposit
 ------------------------------------------------------------------------------------------
 
+-- The chest behind a chest window: the widget links the actor and holds the container inventory.
+local function resolveOpenChest(widget, source)
+    if not valid(widget) then return false end
+    local actor, inv
+    pcall(function() actor = widget.LinkedActor end)
+    if not valid(actor) then pcall(function() actor = widget:GetLinkedActor() end) end
+    if not valid(actor) then
+        L.dbg("chest window %s has no linked actor yet (%s)", core.shortName(widget), source)
+        return false
+    end
+    local entry = containers[core.fullName(actor)]
+    if not entry then
+        registerContainer(actor, "chest window")
+        entry = containers[core.fullName(actor)]
+    end
+    if not entry then
+        L.dbg("chest window is for %s, not a storage container (%s)", core.shortName(actor), source)
+        return false
+    end
+    pcall(function() inv = widget.Inventory end)
+    if not valid(inv) then inv = inventoryOf(entry) end
+    if not valid(inv) then
+        L.dbg("no inventory found for %s (%s)", entry.name, source)
+        return false
+    end
+    local first = openChest ~= entry or openInv ~= inv
+    openChest, openInv, chestWidget = entry, inv, widget
+    if first then
+        ensurePins()
+        learnOpenChest()
+        L.dbg("chest opened: %s [%s] %s (%s)", entry.name, tostring(keyOf(entry)),
+            pinsOf(entry) and ("pinned: " .. (joinNames(pinsOf(entry).rows))) or "not pinned", source)
+    end
+    return true
+end
+
 local function pinOpenChest()
     ensurePins()
+    if not openChest and valid(chestWidget) then resolveOpenChest(chestWidget, "pin key") end
     if not openChest or not valid(openChest.actor) or not valid(openInv) then
         core.tell("Stow: open a chest first, then press the pin key")
         return
@@ -486,9 +512,11 @@ local function deposit()
     local controller = core.controller()
     if not valid(controller) then core.tell("Stow: no player controller yet"); return end
     local pawn, backpack
-    pcall(function() pawn = controller:GetPawn() end)
+    pcall(function() pawn = controller.Pawn end)
+    if not valid(pawn) then pcall(function() pawn = controller:K2_GetPawn() end) end
+    if not valid(pawn) then core.tell("Stow: player character not found"); return end
     pcall(function() backpack = pawn.BackpackInventory end)
-    if not valid(pawn) or not valid(backpack) then core.tell("Stow: backpack not found"); return end
+    if not valid(backpack) then core.tell(string.format("Stow: backpack not found on %s", core.shortName(pawn))); return end
     local origin = locationOf(pawn)
     local nearby = pinnedNearby(origin, CONFIG.RangeMetres)
     if #nearby == 0 then
@@ -556,23 +584,16 @@ local function hookOnce(path, pre, post)
     return ok, err
 end
 
-local function onContainerOpened(self, invParam)
-    local inv = core.unwrap(invParam)
-    if not valid(inv) then return end
-    local entry = entryOfInventory(inv)
-    if not entry then
-        L.dbg("opened an inventory that is not a registered container (%s)", core.shortName(inv))
-        openChest, openInv = nil, nil
-        return
-    end
-    openChest, openInv = entry, inv
-    ensurePins()
-    learnOpenChest()
-    L.dbg("chest opened: %s [%s] %s", entry.name, tostring(keyOf(entry)), pinsOf(entry) and ("pinned: " .. (joinNames(pinsOf(entry).rows))) or "not pinned")
-    ExecuteWithDelay(250, function()
+-- The chest window's SetupObjectInventory(ContainerInventory) runs when the game fills it in.
+local function onChestSetup(self)
+    local widget = core.unwrap(self)
+    if not valid(widget) then return end
+    ExecuteWithDelay(100, function()
         ExecuteInGameThread(function()
-            pcall(refreshTitle)
-            pcall(refreshButton)
+            if pcall(resolveOpenChest, widget, "setup") then
+                pcall(refreshTitle)
+                pcall(refreshButton)
+            end
         end)
     end)
 end
@@ -583,21 +604,48 @@ local function onPanelClosed(self)
     end
 end
 
+-- In-world tooltip: the game fills the description in UpdateTooltip(Actor) and again in
+-- UpdateVisuals, so remember which actor each tooltip widget shows and append the pins after both.
+local tooltipActors = {}   -- tooltip widget full name -> container entry
+
+local function applyTooltip(widget, entry)
+    local rec = pinsOf(entry)
+    if not rec or not valid(widget) then return end
+    local ok, err = pcall(function()
+        local block = widget.Description
+        if not valid(block) then error("no Description block") end
+        local current = ""
+        pcall(function() current = block:GetText():ToString() end)
+        if current:find("Pinned:", 1, true) then return end
+        local line = "Pinned: " .. (joinNames(rec.rows))
+        local text = makeText(current ~= "" and (current .. "\n" .. line) or line)
+        if not text then return end
+        block:SetText(text)
+        block:SetVisibility(4) -- SelfHitTestInvisible
+        if not warned.tooltipShown then
+            warned.tooltipShown = true
+            L.dbg("tooltip pins shown for %s (description was %q)", entry.name, current)
+        end
+    end)
+    if not ok then once("tooltip", "tooltip update failed: %s", tostring(err)) end
+end
+
 local function onTooltip(self, actorParam)
     if not CONFIG.Tooltip then return end
-    local actor = core.unwrap(actorParam)
-    if not valid(actor) then return end
-    local entry = containers[core.fullName(actor)]
-    if not entry then return end
-    local rec = pinsOf(entry)
-    if not rec then return end
     local widget = core.unwrap(self)
-    pcall(function()
-        local text = makeText("Pinned: " .. (joinNames(rec.rows)))
-        if not text then return end
-        widget.Description:SetText(text)
-        widget.Description:SetVisibility(4) -- SelfHitTestInvisible
-    end)
+    local actor = core.unwrap(actorParam)
+    if not valid(widget) then return end
+    local entry = valid(actor) and containers[core.fullName(actor)] or nil
+    tooltipActors[core.fullName(widget)] = entry
+    if entry then applyTooltip(widget, entry) end
+end
+
+local function onTooltipVisuals(self)
+    if not CONFIG.Tooltip then return end
+    local widget = core.unwrap(self)
+    if not valid(widget) then return end
+    local entry = tooltipActors[core.fullName(widget)]
+    if entry and valid(entry.actor) then applyTooltip(widget, entry) end
 end
 
 local function onButtonClicked(self)
@@ -610,11 +658,11 @@ end
 
 -- Blueprint classes only exist once the game loaded them; retry those hooks every tick.
 local function tryLateHooks()
-    if CONFIG.TitleBar or CONFIG.PinButton then
-        hookOnce(CONFIG.CloseHook, function(self) pcall(onPanelClosed, self) end)
-    end
+    hookOnce(CONFIG.SetupHook, function(self) pcall(onChestSetup, self) end)
+    hookOnce(CONFIG.CloseHook, function(self) pcall(onPanelClosed, self) end)
     if CONFIG.Tooltip then
         hookOnce(CONFIG.TooltipHook, function() end, function(self, actor) pcall(onTooltip, self, actor) end)
+        hookOnce(CONFIG.VisualsHook, function() end, function(self) pcall(onTooltipVisuals, self) end)
     end
     if CONFIG.PinButton then
         hookOnce(CONFIG.ButtonClickHook, function(self) pcall(onButtonClicked, self) end)
@@ -667,14 +715,14 @@ function F.init(coreRef, config)
             ExecuteWithDelay(300, function()
                 ExecuteInGameThread(function()
                     pcall(addPinButton, widget)
+                    pcall(resolveOpenChest, widget, "window")
                     pcall(refreshTitle)
+                    pcall(refreshButton)
                 end)
             end)
         end)
     end
-
-    local okHook, hookErr = hookOnce(CONFIG.OpenHook, function(self, inv) pcall(onContainerOpened, self, inv) end)
-    if not okHook then L.log("could not hook %s (%s): pinning by key needs it", CONFIG.OpenHook, tostring(hookErr)) end
+    tryLateHooks()
 
     bindKey(CONFIG.Keys.Deposit, "deposit", deposit)
     bindKey(CONFIG.Keys.Pin, "pin", pinOpenChest)
@@ -780,9 +828,9 @@ function F.console(_, params, Ar)
     end
     table.sort(list, function(a, b) return a.d < b.d end)
     for _, item in ipairs(list) do Ar:Log(item.line) end
-    Ar:Log(string.format("[Fieldkit:stow] %d container(s) within %d m; open chest: %s; hooks: open %s close %s tooltip %s button %s",
+    Ar:Log(string.format("[Fieldkit:stow] %d container(s) within %d m; open chest: %s; hooks: setup %s close %s tooltip %s button %s",
         #list, CONFIG.RangeMetres, openChest and openChest.name or "none",
-        hooks[CONFIG.OpenHook] and "ok" or "no", hooks[CONFIG.CloseHook] and "ok" or "no",
+        hooks[CONFIG.SetupHook] and "ok" or "no", hooks[CONFIG.CloseHook] and "ok" or "no",
         hooks[CONFIG.TooltipHook] and "ok" or "no", hooks[CONFIG.ButtonClickHook] and "ok" or "no"))
     Ar:Log("[Fieldkit:stow] usage: fieldkit stow | deposit | pins | pin|unpin <row> | clear | names <text> | scan")
 end
