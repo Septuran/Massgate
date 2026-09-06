@@ -97,8 +97,9 @@ Features:
 - **scour** (Misc section): the **Sonic Scourer**, a craftable powered device (Fabricator:
   steel, electronics, copper wire, composites) that clears the snow, sand and ash storms pile
   onto building pieces. Every few minutes (default 180 s) while switched on and powered it
-  pulses and clears every piece within range (default 25 m) whose build-up stopped growing
-  since the previous pulse, so it waits a storm out. Each pulse spends one matching cartridge
+  pulses and clears every piece within range (default 25 m) whose build-up has not grown for
+  a minute, so it waits a storm out (it re-reads the pieces every 20 s; the first pulse comes
+  about 80 s after placement). Each pulse spends one matching cartridge
   from its hopper per ten pieces: **Thermal Cartridge** for snow, **Cyclone Filter** for sand,
   **Scrubber Filter** for ash (Fabricator or Machining Bench, four per craft). Draws 1 kW.
   Press interact to load cartridges, hold to switch it on or off. A `--dev` build needs neither

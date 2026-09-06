@@ -5,10 +5,12 @@
     BPC_AccumulationComponent with Amount, AccumulationType and a ServerClear function). The Sonic
     Scourer is a craftable, powered deployable (Fieldkit pak: item, recipe, energy and inventory
     rows; placed as the small metal crate actor with the thumper mesh, like Massgate's gates). Every
-    IntervalSeconds, while switched on and powered, it pulses: every building piece within
-    RadiusMetres whose build-up has STOPPED growing since the previous pulse (so a running storm is
-    waited out) is cleared, and one matching cartridge from its hopper is spent per PiecesPerCartridge
-    pieces of that type (Thermal Cartridge = snow, Cyclone Filter = sand, Scrubber Filter = ash).
+    SampleSeconds it re-reads the build-up on every building piece within RadiusMetres and notes
+    when each piece last grew. Every IntervalSeconds, while switched on and powered, it pulses:
+    every piece whose build-up has been quiet for QuietSeconds (so a running storm is waited out)
+    is cleared, and one matching cartridge from its hopper is spent per PiecesPerCartridge pieces
+    of that type (Thermal Cartridge = snow, Cyclone Filter = sand, Scrubber Filter = ash). The
+    first pulse after placement comes once the quiet time has passed, not a full interval later.
 
     Costs: power (D_Energy row, 1 kW while on), the cartridges, and the pulse interval. A --dev build
     sets DevMode = true in config.lua: no power and no cartridges needed.
@@ -37,6 +39,9 @@ local CONFIG = {
     IntervalSeconds    = 180,     -- between pulses (the in-game row wins)
     RadiusMetres       = 25,      -- pulse reach (the in-game row wins)
     MinAmount          = 0.05,    -- build-up below this is ignored (Amount is roughly 0..1)
+    SampleSeconds      = 20,      -- how often each scourer re-reads the build-up on its pieces
+    QuietSeconds       = 60,      -- a piece is cleared once its build-up has not grown for this long
+    GrowthTolerance    = 0.002,   -- growth below this between two samples counts as "not growing"
     PiecesPerCartridge = 10,      -- one cartridge per this many pieces cleared, per type, per pulse
     RequirePower       = true,
     RequireCartridge   = true,
@@ -72,11 +77,13 @@ local enabled = true
 local buildings = {}     -- full name -> { actor, loc, comp }
 local buildingsGen = 0   -- bumped on registration; scourers recompute their piece lists when it changed
 local pending = {}       -- spawn queue of building actors
-local scourers = {}      -- full name -> { actor, name, inv, pieces, piecesGen, last = {piece full name -> amount}, lastPulse, powered, report }
+local scourers = {}      -- full name -> { actor, name, inv, pieces, piecesGen, last = {piece full name -> amount},
+                         --   quietSince = {piece full name -> tick}, sampleTick, lastPulse, firstPulseAt, powered, report }
 local warned = {}
 local meshCache = nil
 
 local function valid(o) return core.valid(o) end
+local function ticksOf(seconds) return math.ceil(seconds * 1000 / core.CONFIG.TickMs) end
 
 local function once(key, fmt, ...)
     if warned[key] then return end
@@ -255,7 +262,9 @@ local function registerScourer(actor, source)
     local name = core.fullName(actor)
     if scourers[name] or name:find("Default__", 1, true) then return end
     if rowOf(actor) ~= CONFIG.ItemRow then return end
-    scourers[name] = { actor = actor, name = "Sonic Scourer", last = {}, lastPulse = core.tick(), pulses = 0, cleared = 0 }
+    local now = core.tick()
+    scourers[name] = { actor = actor, name = "Sonic Scourer", last = {}, quietSince = {}, lastPulse = now, pulses = 0, cleared = 0,
+        firstPulseAt = now + ticksOf(CONFIG.QuietSeconds + CONFIG.SampleSeconds) }
     core.setContext(actor)
     applyLook(actor)
     L.log("scourer registered (%s) at %s", source, (function() local l = locationOf(actor); return l and string.format("%.0f, %.0f, %.0f", l.X, l.Y, l.Z) or "?" end)())
@@ -285,6 +294,45 @@ local function piecesOf(rec)
     rec.pieces, rec.piecesGen, rec.piecesRadius = list, buildingsGen, CONFIG.RadiusMetres
     L.dbg("scourer at %s: %d building piece(s) within %d m", origin and string.format("%.0f, %.0f", origin.X, origin.Y) or "?", #list, CONFIG.RadiusMetres)
     return list
+end
+
+-- Re-read the build-up on every piece in range and note when each one last grew. A pulse only
+-- clears pieces that have been quiet for QuietSeconds, so a running storm is waited out. After a
+-- long gap without samples (feature switched off, game paused) the history is dropped, or stale
+-- quiet times would clear pieces in the middle of a storm.
+local function sample(rec)
+    local now = core.tick()
+    if rec.sampleTick and now - rec.sampleTick > 3 * ticksOf(CONFIG.SampleSeconds) then rec.last, rec.quietSince = {}, {} end
+    rec.sampleTick = now
+    local growing, covered = 0, 0
+    for _, p in ipairs(piecesOf(rec)) do
+        if valid(p.rec.actor) then
+            local amount = readBuildup(p.rec)
+            if amount then
+                local last = rec.last[p.name]
+                if last == nil or amount > last + CONFIG.GrowthTolerance then
+                    rec.quietSince[p.name] = now
+                    if last ~= nil then growing = growing + 1 end
+                end
+                rec.last[p.name] = amount
+                if amount > CONFIG.MinAmount then covered = covered + 1 end
+            end
+        end
+    end
+    rec.growing, rec.covered = growing, covered
+    return growing, covered
+end
+
+-- Ready / waiting counts from the last sample, for the status line.
+local function readiness(rec)
+    local now, quiet = core.tick(), ticksOf(CONFIG.QuietSeconds)
+    local ready, waiting = 0, 0
+    for name, amount in pairs(rec.last) do
+        if amount > CONFIG.MinAmount then
+            if now - (rec.quietSince[name] or now) >= quiet then ready = ready + 1 else waiting = waiting + 1 end
+        end
+    end
+    return ready, waiting
 end
 
 ------------------------------------------------------------------------------------------
@@ -355,24 +403,24 @@ local function pulse(rec, force)
     end
     if not powered then rec.report = "no power"; return end
 
-    -- Pieces per type whose build-up has stopped growing since the previous pulse.
+    -- Pieces per type whose build-up has been quiet for QuietSeconds (fresh sample first).
+    sample(rec)
+    local now, quietTicks = core.tick(), ticksOf(CONFIG.QuietSeconds)
     local byType, seen, waiting = {}, 0, 0
     for _, p in ipairs(piecesOf(rec)) do
-        if valid(p.rec.actor) then
-            local amount, kind = readBuildup(p.rec)
-            if amount and amount > CONFIG.MinAmount then
-                seen = seen + 1
-                local last = rec.last[p.name]
-                if force or (last ~= nil and amount <= last) then
-                    byType[kind or 0] = byType[kind or 0] or {}
-                    table.insert(byType[kind or 0], p)
-                else
-                    waiting = waiting + 1
-                end
+        local amount = rec.last[p.name]
+        if amount and amount > CONFIG.MinAmount and valid(p.rec.actor) then
+            seen = seen + 1
+            if force or now - (rec.quietSince[p.name] or now) >= quietTicks then
+                local _, kind = readBuildup(p.rec)
+                byType[kind or 0] = byType[kind or 0] or {}
+                table.insert(byType[kind or 0], p)
+            else
+                waiting = waiting + 1
             end
-            rec.last[p.name] = amount
         end
     end
+    L.dbg("pulse %d: %d piece(s) with build-up, %d waiting", rec.pulses, seen, waiting)
 
     local needCartridges = not free and CONFIG.RequireCartridge
     local inv = needCartridges and inventoryOf(rec) or nil
@@ -401,7 +449,7 @@ local function pulse(rec, force)
                 local comp = accumulationOf(list[i].rec)
                 if comp and pcall(function() comp:ServerClear() end) then
                     cleared = cleared + 1
-                    rec.last[list[i].name] = nil
+                    rec.last[list[i].name], rec.quietSince[list[i].name] = nil, nil
                 end
             end
             if cleared > 0 and inv then
@@ -418,11 +466,15 @@ local function pulse(rec, force)
     if #parts > 0 then
         rec.report = table.concat(parts, "; ")
         core.tell("Scourer: " .. rec.report)
+        rec.toldWaiting = false
     elseif waiting > 0 then
-        rec.report = string.format("%d piece(s) still gaining build-up; waiting", waiting)
+        rec.report = string.format("%d piece(s) still gaining build-up; waiting for the storm to pass", waiting)
         L.dbg(rec.report)
+        -- once per storm, not every pulse
+        if not rec.toldWaiting then core.tell("Scourer: " .. rec.report); rec.toldWaiting = true end
     else
         rec.report = seen > 0 and "nothing ready" or "clean"
+        rec.toldWaiting = false
     end
 end
 
@@ -476,10 +528,15 @@ function F.tick()
     local tick = core.tick()
     if tick % CONFIG.PruneTicks == 0 then prune() end
     if not enabled then return end
-    local intervalTicks = CONFIG.IntervalSeconds * 1000 / core.CONFIG.TickMs
+    local intervalTicks, sampleTicks = ticksOf(CONFIG.IntervalSeconds), ticksOf(CONFIG.SampleSeconds)
     for _, rec in pairs(scourers) do
-        if valid(rec.actor) and core.hasAuthority(rec.actor) and tick - rec.lastPulse >= intervalTicks then
-            pulse(rec, false)
+        if valid(rec.actor) and core.hasAuthority(rec.actor) then
+            if rec.sampleTick == nil or tick - rec.sampleTick >= sampleTicks then sample(rec) end
+            local due = rec.firstPulseAt or (rec.lastPulse + intervalTicks)
+            if tick >= due then
+                rec.firstPulseAt = nil
+                pulse(rec, false)
+            end
         end
     end
 end
@@ -494,7 +551,9 @@ function F.console(_, params, Ar)
     if word == "scan" then Ar:Log("[Fieldkit:scour] " .. F.rescan(nil, "console")); return end
     if word == "pulse" then
         local n = 0
-        for _, rec in pairs(scourers) do if valid(rec.actor) then pulse(rec, true); n = n + 1; Ar:Log("[Fieldkit:scour] pulse: " .. tostring(rec.report)) end end
+        for _, rec in pairs(scourers) do
+            if valid(rec.actor) then pulse(rec, true); n = n + 1; Ar:Log("[Fieldkit:scour] pulse: " .. tostring(rec.report)); L.log("forced pulse: %s", tostring(rec.report)) end
+        end
         if n == 0 then Ar:Log("[Fieldkit:scour] no scourer placed") end
         return
     end
@@ -511,9 +570,11 @@ function F.console(_, params, Ar)
             end
         end
         table.sort(list, function(a, b) return a.d < b.d end)
+        L.log("probe: %d piece(s) within 60 m of the player", #list)
         for i = 1, math.min(15, #list) do
             local amount, kind = readBuildup(list[i].rec)
-            Ar:Log(string.format("   %5.1f m  %-40s amount=%s type=%s", list[i].d, core.shortName(list[i].rec.actor), tostring(amount), tostring(kind)))
+            local line = string.format("   %5.1f m  %-40s amount=%s type=%s", list[i].d, core.shortName(list[i].rec.actor), tostring(amount), tostring(kind))
+            Ar:Log(line); L.log("%s", line)
         end
         Ar:Log(string.format("[Fieldkit:scour] %d piece(s) within 60 m (%d registered); type numbers map through FeatureConfig.scour.Types", #list, countBuildings()))
         return
@@ -528,9 +589,12 @@ function F.console(_, params, Ar)
                 carts[#carts + 1] = string.format("%s %d", spec.name, n)
             end
             table.sort(carts)
-            local nextIn = math.max(0, CONFIG.IntervalSeconds - (core.tick() - rec.lastPulse) * core.CONFIG.TickMs / 1000)
-            Ar:Log(string.format("   powered=%s  pieces in range=%d  hopper: %s  pulses=%d cleared=%d  next in %.0f s  last: %s",
-                tostring(CONFIG.DevMode or isPowered(rec.actor)), #piecesOf(rec), table.concat(carts, ", "), rec.pulses, rec.cleared, nextIn, tostring(rec.report)))
+            local due = rec.firstPulseAt or (rec.lastPulse + ticksOf(CONFIG.IntervalSeconds))
+            local nextIn = math.max(0, (due - core.tick()) * core.CONFIG.TickMs / 1000)
+            local ready, waiting = readiness(rec)
+            local line = string.format("   powered=%s  pieces in range=%d (%d ready, %d still gaining)  hopper: %s  pulses=%d cleared=%d  next in %.0f s  last: %s",
+                tostring(CONFIG.DevMode or isPowered(rec.actor)), #piecesOf(rec), ready, waiting, table.concat(carts, ", "), rec.pulses, rec.cleared, nextIn, tostring(rec.report))
+            Ar:Log(line); L.log("%s", line)
         end
     end
     Ar:Log("[Fieldkit:scour] usage: fieldkit scour | pulse | probe | scan")

@@ -36,6 +36,9 @@
 --   RadiusMetres         pulse reach when the prospect has no range row (default 25)
 --   PiecesPerCartridge   building pieces one cartridge clears per pulse, per type (default 10)
 --   MinAmount            build-up below this is ignored (default 0.05)
+--   SampleSeconds        how often a scourer re-reads the build-up on its pieces (default 20)
+--   QuietSeconds         a piece is cleared once its build-up has not grown for this long (default 60)
+--   GrowthTolerance      growth below this between samples counts as not growing (default 0.002)
 --   RequirePower / RequireCartridge   switch a cost off (default true; a --dev build sets DevMode)
 --   DevMode              written by build.py: true on a --dev build = no power, no cartridges
 --   Types                { [enum value] = { name, cartridge row } }; `fieldkit scour probe` shows the raw values
