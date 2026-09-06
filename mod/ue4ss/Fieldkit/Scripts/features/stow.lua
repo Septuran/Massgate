@@ -394,7 +394,7 @@ end
 
 local function buttonLabel()
     local rec = openChest and pinsOf(openChest) or nil
-    if rec then return string.format("Pinned: %s     (Shift+P re-pins to the contents)", (joinNames(rec.rows))) end
+    if rec then return string.format("Pinned (Shift+P): %s", (joinNames(rec.rows))) end
     return "Pin contents  (Shift+P)"
 end
 
@@ -646,12 +646,31 @@ local function applyTooltip(widget, entry)
     if not ok then once("tooltip", "tooltip update failed: %s", tostring(err)) end
 end
 
+-- The container an actor stands for: the actor itself, or the owner of a projection component
+-- (deployable tooltips are fed through BP_UIProjectionComponent on the deployable).
+local seenTooltipActors = {}
+
+local function tooltipEntry(actor, source)
+    if not valid(actor) then return nil end
+    local entry = containers[core.fullName(actor)]
+    if not entry then
+        local owner
+        pcall(function() owner = actor:GetOwner() end)
+        if valid(owner) then entry = containers[core.fullName(owner)] end
+    end
+    local key = core.shortName(actor)
+    if not seenTooltipActors[key] then
+        seenTooltipActors[key] = true
+        L.dbg("tooltip %s for %s -> %s", source, key, entry and entry.name or "no container")
+    end
+    return entry
+end
+
 local function onTooltip(self, actorParam)
     if not CONFIG.Tooltip then return end
     local widget = core.unwrap(self)
-    local actor = core.unwrap(actorParam)
     if not valid(widget) then return end
-    local entry = valid(actor) and containers[core.fullName(actor)] or nil
+    local entry = tooltipEntry(core.unwrap(actorParam), "UpdateTooltip")
     tooltipActors[core.fullName(widget)] = entry
     if entry then applyTooltip(widget, entry) end
 end
@@ -661,6 +680,14 @@ local function onTooltipVisuals(self)
     local widget = core.unwrap(self)
     if not valid(widget) then return end
     local entry = tooltipActors[core.fullName(widget)]
+    if not entry then
+        local projection
+        pcall(function() projection = widget.ProjectionActor end)
+        if valid(projection) then
+            entry = tooltipEntry(projection, "UpdateVisuals/projection")
+            tooltipActors[core.fullName(widget)] = entry
+        end
+    end
     if entry and valid(entry.actor) then applyTooltip(widget, entry) end
 end
 
