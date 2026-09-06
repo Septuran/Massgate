@@ -357,13 +357,28 @@ end
 -- Chest window: title bar and pin button
 ------------------------------------------------------------------------------------------
 
+-- The title bar shares its row with the Type/Sort controls, so it only has room for a short line;
+-- the full pin list goes on the wide Pin bar under the player inventory.
+local function shortPins(rows, maxChars)
+    local names = {}
+    for row in pairs(rows) do names[#names + 1] = itemName(row) end
+    table.sort(names)
+    local out, used = {}, 0
+    for i, name in ipairs(names) do
+        local next = used + #name + (i > 1 and 2 or 0)
+        if i > 1 and next > maxChars then
+            return table.concat(out, ", ") .. string.format(" +%d", #names - #out)
+        end
+        out[#out + 1] = name
+        used = next
+    end
+    return table.concat(out, ", ")
+end
+
 local function titleFor(entry)
     local rec = pinsOf(entry)
-    if rec then
-        local names = joinNames(rec.rows)
-        return string.format("%s%spinned: %s", entry.name, CONFIG.TitleSeparator, names)
-    end
-    return string.format("%s%snot pinned (Shift+P pins the contents)", entry.name, CONFIG.TitleSeparator)
+    if rec then return "Pinned: " .. shortPins(rec.rows, CONFIG.MaxTitleChars) end
+    return entry.name .. CONFIG.TitleSeparator .. "not pinned"
 end
 
 local function refreshTitle()
@@ -378,7 +393,8 @@ local function refreshTitle()
 end
 
 local function buttonLabel()
-    if openChest and pinsOf(openChest) then return "Re-pin contents  (Shift+P)" end
+    local rec = openChest and pinsOf(openChest) or nil
+    if rec then return string.format("Pinned: %s     (Shift+P re-pins to the contents)", (joinNames(rec.rows))) end
     return "Pin contents  (Shift+P)"
 end
 
