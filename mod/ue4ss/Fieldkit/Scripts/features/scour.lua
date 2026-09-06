@@ -312,11 +312,12 @@ local function cartridgesIn(inv, row)
     local stacks, total = {}, 0
     if not valid(inv) then return stacks, 0 end
     for slot = 0, CONFIG.HopperSlots - 1 do
+        -- Read through the live slot array, never a GetItem copy (see stow.lua slotItem).
         pcall(function()
             if inv:HasValidItemInSlot(slot) then
-                local item = inv:GetItem(slot)
-                if item.ItemStaticData.RowName:ToString() == row then
-                    local n = stackOf(item)
+                local s = core.unwrap(inv.Slots.Slots[slot + 1])
+                if s.ItemData.ItemStaticData.RowName:ToString() == row then
+                    local n = stackOf(s.ItemData)
                     stacks[#stacks + 1] = { slot = slot, count = n }
                     total = total + n
                 end

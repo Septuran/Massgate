@@ -29,7 +29,7 @@
         SetupObjectInventory is hooked; the controller's ClientOpenContainer never fires for chests),
         UMG_DeviceInventory.UMG_DarkTitlebar:UpdateText for the title, InventoryVertBox for our button
       AIcarusController:OnServer_ShiftItemAuto(SourceInv, SourceSlot, DestInv)  the move itself
-      UInventory:HasValidItemInSlot/GetItem(slot).ItemStaticData.RowName     what a slot holds
+      UInventory:HasValidItemInSlot + Slots.Slots[i].ItemData (live array)  what a slot holds
       UMG_TooltipInworld_C (in-world tooltip): ProjectionActor:GetOwner() is the chest; its own
         graph functions cannot be hooked, so the visible tooltips are polled a few times a second
 
@@ -146,16 +146,34 @@ local function stackOf(item)
     return count
 end
 
--- Row name and stack count of a slot, or nil when it is empty.
+-- Row name and stack count of a slot, or nil when it is empty. Read through the inventory's live
+-- slot array (a property chain, no temporaries): GetItem returns a copy of the 0x1F0-byte item
+-- struct, and walking the dynamic-data array inside such a copy crashed the game twice on a full
+-- backpack (2026-09-06). GetItem stays as the fallback when the array read is unavailable.
+local slotReadMode = nil
+
 local function slotItem(inv, slot)
     local row, count = nil, 0
-    pcall(function()
-        if inv:HasValidItemInSlot(slot) then
-            local item = inv:GetItem(slot)
-            row = item.ItemStaticData.RowName:ToString()
-            count = stackOf(item)
-        end
+    local okArr = pcall(function()
+        if not inv:HasValidItemInSlot(slot) then return end
+        local elem = inv.Slots.Slots[slot + 1]
+        local s = core.unwrap(elem)
+        row = s.ItemData.ItemStaticData.RowName:ToString()
+        count = stackOf(s.ItemData)
     end)
+    if okArr then
+        if slotReadMode ~= "array" then slotReadMode = "array"; L.dbg("slot reads through Slots.Slots") end
+    else
+        if slotReadMode ~= "getitem" then slotReadMode = "getitem"; L.log("slot array read failed; falling back to GetItem copies") end
+        row, count = nil, 0
+        pcall(function()
+            if inv:HasValidItemInSlot(slot) then
+                local item = inv:GetItem(slot)
+                row = item.ItemStaticData.RowName:ToString()
+                count = stackOf(item)
+            end
+        end)
+    end
     if row == "" or row == "None" then row = nil end
     return row, count
 end
@@ -542,15 +560,19 @@ local function deposit()
         return
     end
     local moved, kept, movedCount = {}, {}, 0
-    for slot = 0, slotCount(backpack, CONFIG.MaxBackpackSlots) - 1 do
+    local slots = slotCount(backpack, CONFIG.MaxBackpackSlots)
+    L.dbg("deposit: %d backpack slot(s), %d pinned chest(s) in range", slots, #nearby)
+    for slot = 0, slots - 1 do
         local row, count = slotItem(backpack, slot)
         if row then
+            L.dbg("deposit: slot %d = %d x %s", slot, count, row)
             local before = count
             local target = nil
             for _, cand in ipairs(nearby) do
                 if cand.rec.rows[row] then
                     local inv = inventoryOf(cand.entry)
                     if valid(inv) then
+                        L.dbg("deposit: slot %d -> %s", slot, cand.entry.name)
                         local ok, err = pcall(function() controller:OnServer_ShiftItemAuto(backpack, slot, inv) end)
                         if not ok then once("shift", "OnServer_ShiftItemAuto failed: %s", tostring(err)); break end
                         local rowAfter, after = slotItem(backpack, slot)
