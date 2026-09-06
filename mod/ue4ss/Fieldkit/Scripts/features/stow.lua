@@ -30,7 +30,8 @@
         UMG_DeviceInventory.UMG_DarkTitlebar:UpdateText for the title, InventoryVertBox for our button
       AIcarusController:OnServer_ShiftItemAuto(SourceInv, SourceSlot, DestInv)  the move itself
       UInventory:HasValidItemInSlot/GetItem(slot).ItemStaticData.RowName     what a slot holds
-      UMG_TooltipInworld_C:UpdateTooltip(Actor)                             hooked: tooltip text
+      UMG_TooltipInworld_C (in-world tooltip): ProjectionActor:GetOwner() is the chest; its own
+        graph functions cannot be hooked, so the visible tooltips are polled a few times a second
 
     Console: `fieldkit stow` (status + nearby chests), `fieldkit stow pins` (every pinned chest),
     `fieldkit stow deposit`, `fieldkit stow pin|unpin <item row>` / `fieldkit stow clear` (open chest),
@@ -61,7 +62,8 @@ local CONFIG = {
     ChestWidgetClass   = "/Game/UI/Windows/UMG_Chest.UMG_Chest_C",
     SetupHook          = "/Game/UI/Windows/UMG_Chest.UMG_Chest_C:SetupObjectInventory",
     CloseHook          = "/Game/UI/Components/UMG_IcarusLinkedActorPanel.UMG_IcarusLinkedActorPanel_C:ClosePanel",
-    TooltipHook        = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C:UpdateTooltip",
+    TooltipClass       = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C",
+    TooltipPollMs      = 300,     -- how often the visible tooltips get their pin line
     ButtonClass        = "/Game/UI/Components/UMG_BasicButton_2.UMG_BasicButton_2_C",
     ButtonClickHook    = "/Game/UI/Components/UMG_ButtonBase.UMG_ButtonBase_C:OnClicked",
     WidgetLibrary      = "/Script/UMG.Default__WidgetBlueprintLibrary",
@@ -70,7 +72,6 @@ local CONFIG = {
     SettingLearnRow    = "Fieldkit_StowLearn",
     TitleSeparator     = "  -  ",
     MaxTitleChars      = 20,      -- pin names that fit in the title bar next to the Type/Sort controls
-    VisualsHook        = "/Game/UI/Popups/UMG_TooltipInworld.UMG_TooltipInworld_C:UpdateVisuals",
 }
 
 local L
@@ -620,9 +621,11 @@ local function onPanelClosed(self)
     end
 end
 
--- In-world tooltip: the game fills the description in UpdateTooltip(Actor) and again in
--- UpdateVisuals, so remember which actor each tooltip widget shows and append the pins after both.
-local tooltipActors = {}   -- tooltip widget full name -> container entry
+-- In-world tooltip (UMG_TooltipInworld_C, one per projection component in view). Its own graph
+-- functions (UpdateTooltip, UpdateVisuals) are not reachable by hooks, so the mod remembers the
+-- widgets the game creates and, a few times a second, appends the pin line to the description of
+-- those whose projection component sits on a pinned chest.
+local tooltips = {}        -- tooltip widget full name -> { widget, entry (resolved once), checked }
 
 local function applyTooltip(widget, entry)
     local rec = pinsOf(entry)
@@ -646,49 +649,35 @@ local function applyTooltip(widget, entry)
     if not ok then once("tooltip", "tooltip update failed: %s", tostring(err)) end
 end
 
--- The container an actor stands for: the actor itself, or the owner of a projection component
--- (deployable tooltips are fed through BP_UIProjectionComponent on the deployable).
-local seenTooltipActors = {}
-
-local function tooltipEntry(actor, source)
-    if not valid(actor) then return nil end
-    local entry = containers[core.fullName(actor)]
-    if not entry then
-        local owner
-        pcall(function() owner = actor:GetOwner() end)
-        if valid(owner) then entry = containers[core.fullName(owner)] end
-    end
-    local key = core.shortName(actor)
-    if not seenTooltipActors[key] then
-        seenTooltipActors[key] = true
-        L.dbg("tooltip %s for %s -> %s", source, key, entry and entry.name or "no container")
-    end
-    return entry
+-- The container a tooltip widget shows: the owner of its projection component.
+local function tooltipEntryOf(widget)
+    local projection, owner
+    pcall(function() projection = widget.ProjectionActor end)
+    if not valid(projection) then return nil, false end
+    pcall(function() owner = projection:GetOwner() end)
+    if not valid(owner) then return nil, true end
+    return containers[core.fullName(owner)], true
 end
 
-local function onTooltip(self, actorParam)
+local function pollTooltips()
     if not CONFIG.Tooltip then return end
-    local widget = core.unwrap(self)
-    if not valid(widget) then return end
-    local entry = tooltipEntry(core.unwrap(actorParam), "UpdateTooltip")
-    tooltipActors[core.fullName(widget)] = entry
-    if entry then applyTooltip(widget, entry) end
-end
-
-local function onTooltipVisuals(self)
-    if not CONFIG.Tooltip then return end
-    local widget = core.unwrap(self)
-    if not valid(widget) then return end
-    local entry = tooltipActors[core.fullName(widget)]
-    if not entry then
-        local projection
-        pcall(function() projection = widget.ProjectionActor end)
-        if valid(projection) then
-            entry = tooltipEntry(projection, "UpdateVisuals/projection")
-            tooltipActors[core.fullName(widget)] = entry
+    for name, rec in pairs(tooltips) do
+        if not valid(rec.widget) then
+            tooltips[name] = nil
+        else
+            if rec.entry == nil then
+                local entry, known = tooltipEntryOf(rec.widget)
+                if known then
+                    rec.entry = entry or false
+                    if not rec.logged then
+                        rec.logged = true
+                        L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
+                    end
+                end
+            end
+            if rec.entry and valid(rec.entry.actor) then applyTooltip(rec.widget, rec.entry) end
         end
     end
-    if entry and valid(entry.actor) then applyTooltip(widget, entry) end
 end
 
 local function onButtonClicked(self)
@@ -703,10 +692,6 @@ end
 local function tryLateHooks()
     hookOnce(CONFIG.SetupHook, function(self) pcall(onChestSetup, self) end)
     hookOnce(CONFIG.CloseHook, function(self) pcall(onPanelClosed, self) end)
-    if CONFIG.Tooltip then
-        hookOnce(CONFIG.TooltipHook, function() end, function(self, actor) pcall(onTooltip, self, actor) end)
-        hookOnce(CONFIG.VisualsHook, function() end, function(self) pcall(onTooltipVisuals, self) end)
-    end
     if CONFIG.PinButton then
         hookOnce(CONFIG.ButtonClickHook, function(self) pcall(onButtonClicked, self) end)
     end
@@ -766,6 +751,20 @@ function F.init(coreRef, config)
         end)
     end
     tryLateHooks()
+
+    if CONFIG.Tooltip then
+        pcall(NotifyOnNewObject, CONFIG.TooltipClass, function(widget)
+            if core.fullName(widget):find("Default__", 1, true) then return end
+            tooltips[core.fullName(widget)] = { widget = widget }
+        end)
+        LoopAsync(CONFIG.TooltipPollMs, function()
+            ExecuteInGameThread(function()
+                local ok, err = pcall(pollTooltips)
+                if not ok then once("tooltipPoll", "tooltip poll failed: %s", tostring(err)) end
+            end)
+            return false
+        end)
+    end
 
     bindKey(CONFIG.Keys.Deposit, "deposit", deposit)
     bindKey(CONFIG.Keys.Pin, "pin", pinOpenChest)
@@ -874,7 +873,8 @@ function F.console(_, params, Ar)
     Ar:Log(string.format("[Fieldkit:stow] %d container(s) within %d m; open chest: %s; hooks: setup %s close %s tooltip %s button %s",
         #list, CONFIG.RangeMetres, openChest and openChest.name or "none",
         hooks[CONFIG.SetupHook] and "ok" or "no", hooks[CONFIG.CloseHook] and "ok" or "no",
-        hooks[CONFIG.TooltipHook] and "ok" or "no", hooks[CONFIG.ButtonClickHook] and "ok" or "no"))
+        (function() local n = 0; for _ in pairs(tooltips) do n = n + 1 end; return tostring(n) .. " widget(s)" end)(),
+        hooks[CONFIG.ButtonClickHook] and "ok" or "no"))
     Ar:Log("[Fieldkit:stow] usage: fieldkit stow | deposit | pins | pin|unpin <row> | clear | names <text> | scan")
 end
 
