@@ -356,10 +356,20 @@ end
 for _, id in ipairs(CONFIG.Features) do loadFeature(id) end
 log("Fieldkit v%s loaded with %d feature(s)", tostring(CONFIG.Version), #features)
 
+local announced = false
+
 local function coreTick()
     tick = tick + 1
     pruneTames()
     readSettings(anyContext())
+    -- One line in the player's message area once the world is up (also after a Ctrl+R reload),
+    -- so a reload is visible without opening the log.
+    if not announced and core.controller() then
+        announced = true
+        local ids = {}
+        for _, f in ipairs(features) do ids[#ids + 1] = f.id .. (f.disabled and " (disabled)" or "") end
+        core.tell(string.format("Fieldkit v%s loaded: %s", tostring(CONFIG.Version), table.concat(ids, ", ")))
+    end
     local changed = settings.changed
     settings.changed = false
     for _, f in ipairs(features) do
