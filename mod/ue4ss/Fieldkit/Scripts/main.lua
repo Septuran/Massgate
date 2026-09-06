@@ -234,10 +234,11 @@ end
 -- Any world-bound object, for engine calls that need a world context (subsystem and player
 -- lookups). Features hand in the actors they register (containers, ...); tames work too.
 local contextObject = nil
+local knownController = nil   -- the local player's controller, from its ClientRestart
 
 local function anyContext()
     if valid(contextObject) then return contextObject end
-    contextObject = anyTame()
+    contextObject = valid(knownController) and knownController or anyTame()
     return contextObject
 end
 
@@ -286,8 +287,10 @@ local core = {
     subsystem = function() return prospectSubsystem(anyContext()) end,
 }
 
--- The local player's controller (player 0), through the engine's GameplayStatics.
+-- The local player's controller (player 0): remembered from its ClientRestart, else through the
+-- engine's GameplayStatics.
 function core.controller()
+    if valid(knownController) then return knownController end
     local controller = nil
     pcall(function()
         local gs = StaticFindObject("/Script/Engine.Default__GameplayStatics")
@@ -356,6 +359,57 @@ end
 for _, id in ipairs(CONFIG.Features) do loadFeature(id) end
 log("Fieldkit v%s loaded with %d feature(s)", tostring(CONFIG.Version), #features)
 
+------------------------------------------------------------------------------------------
+-- Catch-up scan. The registries fill from spawn notifications, which miss every actor that
+-- already existed when this code started: after a Ctrl+R hot reload, or when the mod comes up
+-- after the world (a slow start). So the object table is walked ONCE per trigger: right after
+-- load (a no-op on a fresh start, where no world exists yet) and once more when the local
+-- player's pawn is set up. Never periodic, never per event (see README).
+------------------------------------------------------------------------------------------
+
+local function rescan(reason)
+    local okT, mounts = pcall(FindAllOf, CONFIG.Tames.ScanClass)
+    local tames = 0
+    if okT and mounts then
+        for _, actor in ipairs(mounts) do registerTame(actor, "scan"); tames = tames + 1 end
+    end
+    local parts = { string.format("%d tame(s)", tames) }
+    for _, f in ipairs(features) do
+        if f.rescan and not f.disabled then
+            local ok, result = pcall(f.rescan, core, reason)
+            parts[#parts + 1] = ok and tostring(result) or (f.id .. " scan failed: " .. tostring(result))
+        end
+    end
+    log("catch-up scan (%s): %s", reason, table.concat(parts, ", "))
+end
+
+local scans = {}
+local function scanOnce(reason, delayMs)
+    if scans[reason] then return end
+    scans[reason] = true
+    ExecuteWithDelay(delayMs, function()
+        ExecuteInGameThread(function()
+            local ok, err = pcall(rescan, reason)
+            if not ok then log("catch-up scan (%s) failed: %s", reason, tostring(err)) end
+        end)
+    end)
+end
+
+scanOnce("load", 1500)
+
+-- The local player's pawn was (re)started: the world is up. Remember the controller.
+pcall(RegisterHook, "/Script/Engine.PlayerController:ClientRestart", function() end, function(self)
+    local controller = self
+    pcall(function() controller = self:get() end)
+    if not valid(controller) then return end
+    local isLocal = false
+    pcall(function() isLocal = controller:IsLocalController() == true end)
+    if not isLocal then return end
+    knownController = controller
+    contextObject = controller
+    scanOnce("player spawned", 3000)
+end)
+
 local announced = false
 
 local function coreTick()
@@ -407,13 +461,10 @@ end)
 pcall(RegisterConsoleCommandHandler, "fieldkit", function(FullCommand, Parameters, Ar)
     local word = Parameters[1]
     if word == "scan" then
-        -- Diagnostic only: walks the object table once to pick up tames that spawned before the mod hooked in.
-        local ok, mounts = pcall(FindAllOf, CONFIG.Tames.ScanClass)
-        local n = 0
-        if ok and mounts then
-            for _, actor in ipairs(mounts) do registerTame(actor, "scan"); n = n + 1 end
-        end
-        Ar:Log(string.format("[Fieldkit] scan found %d %s actors; %d registered", n, CONFIG.Tames.ScanClass, countTames()))
+        -- Manual catch-up scan (one object-table walk); see rescan() above.
+        local ok, err = pcall(rescan, "console")
+        Ar:Log(ok and string.format("[Fieldkit] scan done: %d tame(s) registered; details in UE4SS.log", countTames())
+            or ("[Fieldkit] scan failed: " .. tostring(err)))
         return true
     end
     if word == "tames" then

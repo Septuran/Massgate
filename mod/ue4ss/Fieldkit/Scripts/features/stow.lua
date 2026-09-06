@@ -79,6 +79,7 @@ local L
 local core
 local enabled = true
 local containers = {}      -- actor full name -> { actor, key, name, inv }
+local registryGen = 0      -- bumped on every registration; tooltips re-check "not a container" widgets after it changes
 local pins = {}            -- chest key -> { rows = { [row] = true }, name = "Wood Crate" }
 local pinsProspect = nil   -- prospect id the pins table was loaded for
 local pinsDirty = false
@@ -215,6 +216,7 @@ local function registerContainer(actor, source)
     if excluded(className) then return end
     local entry = { actor = actor, className = className, name = chestName(actor, className) }
     containers[fullName] = entry
+    registryGen = registryGen + 1
     core.setContext(actor)
     L.dbg("container registered: %s (%s) via %s", entry.name, className, source)
 end
@@ -672,12 +674,20 @@ local function pollTooltips()
     for name, rec in pairs(tooltips) do
         if not valid(rec.widget) then
             tooltips[name] = nil
-        elseif rec.entry == nil then
+        elseif rec.entry == nil or (rec.entry == false and rec.gen ~= registryGen) then
+            -- Unresolved, or resolved as "not a container" before more containers registered.
             local entry, known = tooltipEntryOf(rec.widget)
             if known then
-                L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry and entry.name or "not a container")
-                if entry then rec.entry = entry else tooltips[name] = nil end
+                if entry then
+                    L.dbg("tooltip %s -> %s", core.shortName(rec.widget), entry.name)
+                    rec.entry = entry
+                else
+                    if rec.entry == nil then L.dbg("tooltip %s -> not a container (yet)", core.shortName(rec.widget)) end
+                    rec.entry, rec.gen = false, registryGen
+                end
             end
+            tracked = tracked + 1
+        elseif rec.entry == false then
             tracked = tracked + 1
         else
             tracked = tracked + 1
@@ -808,6 +818,16 @@ end
 
 function F.settingsChanged() applySettings() end
 
+-- Core's one-time catch-up scan (after load / player spawn): containers that existed already.
+function F.rescan(_, reason)
+    local ok, list = pcall(FindAllOf, CONFIG.ScanClass)
+    local n = 0
+    if ok and list then
+        for _, actor in ipairs(list) do registerContainer(actor, "scan:" .. reason); n = n + 1 end
+    end
+    return string.format("%d container(s) seen, %d registered", n, countContainers())
+end
+
 function F.tick()
     applySettings()
     tryLateHooks()
@@ -871,10 +891,7 @@ function F.console(_, params, Ar)
         return
     end
     if word == "scan" then
-        local ok, list = pcall(FindAllOf, CONFIG.ScanClass)
-        local n = 0
-        if ok and list then for _, actor in ipairs(list) do registerContainer(actor, "scan"); n = n + 1 end end
-        Ar:Log(string.format("[Fieldkit:stow] scan found %d container(s); %d registered", n, countContainers()))
+        Ar:Log("[Fieldkit:stow] " .. F.rescan(nil, "console"))
         return
     end
     Ar:Log("[Fieldkit:stow] " .. F.status())
