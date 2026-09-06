@@ -111,7 +111,7 @@ def check_tables_current() -> None:
         )
 
 RECIPE_TABLE = "Crafting/D_ProcessorRecipes.json"
-RECIPE_ROW = "Massgate_"  # prefix: every recipe we add
+RECIPE_ROWS = ("Massgate_", "Fieldkit_")  # prefixes: every recipe the two mods add
 
 # A bare {"RowName": ...} under field X normally points at table D_X (the ItemsStatic
 # trait convention). These fields break that convention.
@@ -301,7 +301,7 @@ def apply_dev_mode(tables: dict[str, tuple[Path, dict]], introduced: list[tuple[
     (Trip costs are switched off by the Lua side when DevMode is true.)"""
     count = 0
     for key, row in introduced:
-        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROW):
+        if key == RECIPE_TABLE and row["Name"].startswith(RECIPE_ROWS):
             row.pop("Requirement", None)
             row["RequiredMillijoules"] = 1000
             row["RecipeSets"] = [
@@ -373,18 +373,10 @@ def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: 
         print(f"   {key}")
 
 
-def build_fieldkit_pak(repak: Path, merge_installed: bool, version: str, massgate_touched: list[str]) -> Path:
-    """Fieldkit's own pak: the Custom World Settings rows from fieldkit_patches.json. Built on a fresh
-    copy of the base tables. Both paks replace whole tables and load alphabetically, so a table
-    touched by both would lose Massgate's rows; refuse that."""
-    fk_patches = read_json(FIELDKIT_PATCHES)
-    tables = load_base_tables(merge_installed, only={p["table"] for p in fk_patches["tables"]})
-    introduced = apply_patches(tables, fk_patches)
-    touched = sorted({key for key, _ in introduced})
-    overlap = sorted(set(touched) & set(massgate_touched))
-    if overlap:
-        sys.exit(f"!! fieldkit_patches.json and patches.json both touch {overlap}; move the rows into one file")
-    validate(tables, introduced)
+def build_fieldkit_pak(repak: Path, version: str, tables: dict[str, tuple[Path, dict]], touched: list[str]) -> Path:
+    """Fieldkit's own pak, written from the SAME fully patched table set as the Massgate pak. Both
+    paks replace whole tables and load alphabetically, so a table both mods add rows to must hold
+    both mods' rows in both paks; sharing one table set guarantees that."""
     write_tables(FIELDKIT_PAK_ROOT, tables, touched)
     return pack(repak, version, FIELDKIT_PAK_ROOT, "Fieldkit")
 
@@ -467,7 +459,7 @@ def lua_string(value: str) -> str:
 
 
 def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], talents: dict[str, list[int]],
-                          items: dict[str, str]) -> None:
+                          items: dict[str, str], dev: bool = False) -> None:
     lua_classes = "".join(f'        "{c}",\n' for c in classes)
     lua_talents = "".join(
         f'        ["{name}"] = {{ {", ".join(str(v) for v in ranks)} }},\n' for name, ranks in sorted(talents.items())
@@ -496,6 +488,9 @@ def write_fieldkit_config(scripts_dir: Path, version: str, classes: list[str], t
         "            ItemNames = {\n"
         f"{''.join('        ' + line + chr(10) for line in lua_items.splitlines())}"
         "            },\n"
+        "        },\n"
+        "        scour = {\n"
+        f"            DevMode = {'true' if dev else 'false'},  -- --dev build: pulses need no power and no cartridges\n"
         "        },\n"
         "    },\n"
         "}\n",
@@ -600,7 +595,7 @@ def install(pak: Path | None, fk_pak: Path | None, dev: bool, channels: list[str
 
     target = install_lua_mod(LUA_MOD, lambda scripts: write_config(scripts, dev, channels, version))
     print(f"   lua mod  -> {target}  (Version = {version}, DevMode = {'true' if dev else 'false'}, channels = {channels})")
-    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents, items))
+    target = install_lua_mod(FIELDKIT_MOD, lambda scripts: write_fieldkit_config(scripts, version, classes, talents, items, dev))
     print(f"   lua mod  -> {target}  (Version = {version}, {len(classes)} mount classes, {len(talents)} regen talents, "
           f"{len(items)} item names)")
     if stale:
@@ -636,7 +631,8 @@ def main() -> int:
             sys.exit("!! --lua-only only makes sense together with --install (and not --package)")
         tables = load_base_tables(False)
         patches = read_json(PATCHES)
-        apply_patches(tables, expand_channels(patches))  # so Massgate's own items get display names too
+        apply_patches(tables, expand_channels(patches))  # so both mods' own items get display names too
+        apply_patches(tables, read_json(FIELDKIT_PATCHES))
         version = build_version(args.dev)
         print(f"installing Lua mods only, version {version}")
         install(None, None, args.dev, patches.get("channels", []), version, mount_classes(tables), regen_talents(tables),
@@ -654,24 +650,28 @@ def main() -> int:
             sys.exit("!! --package needs a clean git tree: commit first so the version number is reproducible")
 
     patches = read_json(PATCHES)
+    fk_patches = read_json(FIELDKIT_PATCHES)
     print("1. loading base tables")
-    tables = load_base_tables(args.merge_installed, only={p["table"] for p in patches["tables"]})
-    print("2. applying patches")
+    tables = load_base_tables(args.merge_installed,
+                              only={p["table"] for p in patches["tables"]} | {p["table"] for p in fk_patches["tables"]})
+    print("2. applying patches (Massgate, then Fieldkit, into one table set)")
     introduced = apply_patches(tables, expand_channels(patches))
+    fk_introduced = apply_patches(tables, fk_patches)
     touched = sorted({key for key, _ in introduced})
+    fk_touched = sorted({key for key, _ in fk_introduced})
     if args.dev:
         print("3. DEV MODE")
-        apply_dev_mode(tables, introduced)
+        apply_dev_mode(tables, introduced + fk_introduced)
     print("4. validating references")
-    validate(tables, introduced)
+    validate(tables, introduced + fk_introduced)
     print("5. writing tables")
     write_tables(PAK_ROOT, tables, touched)
     version = build_version(args.dev)
     print(f"6. packing version {version}")
     out = pack(args.repak, version)
     print(f"   -> {out} ({out.stat().st_size:,} bytes){'  [DEV BUILD]' if args.dev else ''}")
-    print("6b. Fieldkit pak (Custom World Settings rows)")
-    fk_pak = build_fieldkit_pak(args.repak, args.merge_installed, version, touched)
+    print("6b. Fieldkit pak (Custom World Settings rows, Fieldkit items)")
+    fk_pak = build_fieldkit_pak(args.repak, version, tables, fk_touched)
     print(f"   -> {fk_pak} ({fk_pak.stat().st_size:,} bytes)")
     classes, talents, items = mount_classes(tables), regen_talents(tables), item_names(tables)
     if args.install:

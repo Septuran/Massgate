@@ -30,6 +30,15 @@
 --   ItemNames            item row -> display name; written by build.py from D_ItemsStatic/D_Itemable
 -- Pins are saved per prospect in <ue4ss>/FieldkitData/stow/<prospect id>.lua (outside the mod
 -- folder, so reinstalling keeps them; delete a file to forget that prospect's pins).
+--
+-- FeatureConfig.scour (in game: Escape -> Custom World Settings -> Misc wins over these):
+--   IntervalSeconds      seconds between pulses when the prospect has no interval row (default 180)
+--   RadiusMetres         pulse reach when the prospect has no range row (default 25)
+--   PiecesPerCartridge   building pieces one cartridge clears per pulse, per type (default 10)
+--   MinAmount            build-up below this is ignored (default 0.05)
+--   RequirePower / RequireCartridge   switch a cost off (default true; a --dev build sets DevMode)
+--   DevMode              written by build.py: true on a --dev build = no power, no cartridges
+--   Types                { [enum value] = { name, cartridge row } }; `fieldkit scour probe` shows the raw values
 return {
     Version = "dev",
 }

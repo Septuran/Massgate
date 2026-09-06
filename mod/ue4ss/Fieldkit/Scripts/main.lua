@@ -10,6 +10,9 @@
                     of combat, scaled by their Nurtured Recovery talent rank.
       * stow      : pin chests to item types (open the chest, Shift+P) and put the backpack away
                     into the pinned chests nearby with one key (Shift+E).
+      * scour     : the Sonic Scourer, a craftable powered device that pulses every few minutes
+                    and clears snow, sand and ash off building pieces in range, spending a
+                    matching cartridge.
 
     The core owns:
       * the tick (once a second on the game thread), with every feature call wrapped in pcall;
@@ -36,7 +39,7 @@
 
 local CONFIG = {
     TickMs               = 1000,
-    Features             = { "tameregen", "stow" },
+    Features             = { "tameregen", "stow", "scour" },
     FeatureConfig        = {},       -- per-feature overrides, e.g. FeatureConfig.tameregen.PercentPerSecond
     -- Custom World Settings
     CustomWorldSettings  = true,     -- false: features run on their own defaults only
