@@ -160,15 +160,24 @@ def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict
     pak (2026-09-04: Sulfur and Gold Ore lost their icons that way). So: rows the mod adds are
     taken; rows that differ from the fresh game row are taken only if they also differ from the
     PREVIOUS game version (data/previous, snapshotted by --extract) -- a row equal to the old
-    game row is just the mod's untouched copy of it. Without a baseline every differing row is
-    taken and listed, so the ambiguity is at least visible."""
+    game row is just the mod's untouched copy of it. Rows the mod has but the fresh table does not
+    are added -- unless the baseline shows the GAME deleted them, in which case they are dropped.
+    Without a baseline every differing row is taken and listed, so the ambiguity is at least
+    visible."""
     rows = table["Rows"]
     index = {r["Name"]: i for i, r in enumerate(rows)}
     prev_rows = {r["Name"]: r for r in (previous or {}).get("Rows", [])} if previous else None
-    added, applied, skipped, unsure, conflicts = 0, [], 0, [], []
+    added, applied, skipped, unsure, conflicts, deleted = 0, [], 0, [], [], []
     for mod_row in mod_table.get("Rows", []):
         name = mod_row["Name"]
         if name not in index:
+            # A row the fresh game table lacks is usually one the mod adds -- but it is also what a
+            # row the GAME deleted looks like from here. The baseline tells them apart: present in
+            # data/previous means the game dropped it in the last update (2026-09-11: Cobalt_Ingot),
+            # and re-adding it would ship an orphan row whose mesh and icon assets are gone too.
+            if prev_rows is not None and name in prev_rows:
+                deleted.append(name)
+                continue
             rows.append(mod_row)
             index[name] = len(rows) - 1
             added += 1
@@ -201,6 +210,7 @@ def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict
     if not quiet:
         print(f"   overlay {key:45s} <- {pak_dir.name}: +{added} rows, {len(applied)} changed"
               + (f", {skipped} stale game rows ignored" if skipped else "")
+              + (f", {len(deleted)} row(s) the game deleted not re-added: {deleted[:4]}" if deleted else "")
               + (f", {len(conflicts)} field(s) changed by both game and mod (mod wins): {conflicts[:4]}" if conflicts else "")
               + (f", no baseline for {len(unsure)}: {unsure[:6]}{'...' if len(unsure) > 6 else ''}" if unsure else ""))
 
