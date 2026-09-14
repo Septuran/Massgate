@@ -73,6 +73,10 @@ local CONFIG = {
     RelayResource        = "Energy",                   -- FIcarusResourcesEnum row
     RelayBaseRate        = 5000,                       -- Phase Coupler alone
     RelayUpgradedRate    = 20000,                      -- with a Channel Amplifier in the other bay
+    -- A device that is off draws nothing, so a demand-following relay would send a cold Resonator
+    -- zero and it could never come on (2026-09-10). The coupled anchor therefore always pushes at
+    -- least the Resonator's own rated draw (D_Energy Massgate_Resonator.ResourceFlowRate).
+    RelayFloorRate       = 500,
     -- Looks: the crate actor draws its own box through its DeployableSK skeletal mesh (plus two
     -- static-mesh crate parts). Hide those by name and put our mesh in the DeployableSM slot.
     -- (Walking the whole object table to find them froze the game for ~2 s per gate.)
@@ -987,6 +991,31 @@ local function energyNetworkOf(res)
     return nil
 end
 
+-- The components hooked to a network. AResourceNetwork keeps its own list, so this is a short array
+-- read, not a scan of the world (see the no-object-table-walks rule).
+local function linkedDevicesOf(net)
+    local list = {}
+    if not net then return list end
+    pcall(function()
+        local devices = net:GetLinkedDevices()
+        if type(devices) == "table" then
+            for _, d in pairs(devices) do
+                local c = unwrap(d)
+                if valid(c) then list[#list + 1] = c end
+            end
+        elseif type(devices) == "userdata" and devices.ForEach ~= nil then
+            devices:ForEach(function(_, d)
+                local c = unwrap(d)
+                if valid(c) then list[#list + 1] = c end
+            end)
+        end
+    end)
+    return list
+end
+
+-- LastTotalSupply / LastTotalDemand are the network's cached headline numbers and were seen reading
+-- 0 on a grid that plainly had devices on it (2026-09-10), so the linked devices' own desired rates
+-- are summed as well and the larger of the two wins.
 local function networkNumbers(net)
     local supply, demand = 0, 0
     if not net then return supply, demand end
@@ -994,11 +1023,30 @@ local function networkNumbers(net)
         supply = tonumber(net.LastTotalSupply) or 0
         demand = tonumber(net.LastTotalDemand) or 0
     end)
+    local wanted = 0
+    for _, dev in ipairs(linkedDevicesOf(net)) do
+        pcall(function() wanted = wanted + (tonumber(dev:GetCurrentDesiredFlowRate()) or 0) end)
+    end
+    if wanted > demand then demand = wanted end
     return supply, demand
+end
+
+-- What this device itself is asking the grid for right now (UResourceNetworkComponent). Zero for a
+-- device that is switched off, which is exactly why RelayFloorRate exists.
+local function desiredRateOf(res)
+    local want = 0
+    pcall(function()
+        local energy = res.EnergyComponent:Get()
+        if valid(energy) then want = tonumber(energy:GetCurrentDesiredFlowRate()) or 0 end
+    end)
+    return want
 end
 
 local relayState = {}      -- anchor full name -> { rate, resonatorName, resRes, resonator, cap, note }
 local relayFailed = false
+-- Set true once the interact hook is in place, further down; declared here because relayTick reads
+-- it (as a plain global it read nil, and the relay silently never ran - 2026-09-10).
+local hooked = false
 local relayFirstCall = true
 
 local function setFlow(res, source, rate, consume)
@@ -1052,25 +1100,32 @@ local function relayTick()
                     else
                         local rRes = resourceComponentOf(resonator)
                         local net = rRes and energyNetworkOf(rRes) or nil
-                        if not net then
-                            note = "resonator has no grid"
-                        else
-                            local supply, demand = networkNumbers(net)
-                            local own = (state.resonatorName == fullName(resonator)) and state.rate or 0
-                            local need = math.max(0, demand - (supply - own))
-                            local cap = bandwidthOf(anchor)
-                            local avail = cap
-                            if not CONFIG.DevAnchorsPowered then
-                                local aNet = energyNetworkOf(resourceComponentOf(anchor))
-                                if aNet then
-                                    local aSupply, aDemand = networkNumbers(aNet)
-                                    avail = math.min(cap, math.max(0, aSupply - (aDemand - state.rate)))
-                                end
+                        local cap = bandwidthOf(anchor)
+                        local avail = cap
+                        if not CONFIG.DevAnchorsPowered then
+                            local aNet = energyNetworkOf(resourceComponentOf(anchor))
+                            if aNet then
+                                local aSupply, aDemand = networkNumbers(aNet)
+                                avail = math.min(cap, math.max(0, aSupply - (aDemand - state.rate)))
                             end
-                            rate = math.floor(math.min(need, avail))
-                            state.cap = cap
-                            note = string.format("outpost demand %d, own supply %d, cap %d", demand, supply - own, cap)
                         end
+                        state.cap = cap
+                        -- The floor goes out even with no readable grid: the flow source lives on the
+                        -- Resonator's own component, so it counts as soon as a network does form.
+                        local own = (state.resonatorName == fullName(resonator)) and state.rate or 0
+                        local desired = rRes and desiredRateOf(rRes) or 0
+                        local need = CONFIG.RelayFloorRate
+                        if net then
+                            local supply, demand = networkNumbers(net)
+                            need = math.max(need, desired, demand - (supply - own))
+                            note = string.format("outpost demand %d, wants %d, own supply %d, cap %d, floor %d",
+                                demand, desired, supply - own, cap, CONFIG.RelayFloorRate)
+                        else
+                            need = math.max(need, desired)
+                            note = string.format("resonator has no readable grid; pushing floor %d (wants %d)",
+                                CONFIG.RelayFloorRate, desired)
+                        end
+                        rate = math.floor(math.max(0, math.min(need, avail)))
                     end
                 end
             end
@@ -1080,6 +1135,11 @@ local function relayTick()
                     log("relay %s [%s] -> %s: %d units (%s)", shortName(anchor), tostring(entry.channel),
                         resonator and shortName(resonator) or "-", rate, note)
                 end
+            end
+            -- The "no coupler" / "no partner" / "no grid" paths push nothing, so without this the
+            -- relay is silent in the log and looks identical to a relay that never ran at all.
+            if note ~= state.note then
+                dbg("relay %s [%s]: %s", shortName(anchor), tostring(entry.channel), note)
             end
             state.note = note
         end
@@ -1149,8 +1209,6 @@ end
 -- Hooking: "Engage Massgate" is the game's generic ButtonTrigger behaviour, so we hook its
 -- Interact and act only when the owning actor is one of our gates.
 ------------------------------------------------------------------------------------------
-
-local hooked = false
 
 local function onButtonInteract(self, Instigator, HitResult)
     local ok, err = pcall(function()
@@ -1348,6 +1406,56 @@ pcall(RegisterConsoleCommandHandler, "massgate", function(FullCommand, Parameter
                 supply, demand, tostring(isPowered(entry.actor)),
                 st and string.format("  relay=%d cap=%s (%s)", st.rate, tostring(st.cap), tostring(st.note)) or ""))
         end
+        return true
+    end
+    -- `massgate netdump`: everything the game will tell us about each gate's energy grid. Written to
+    -- answer one question - does the relay's dynamic flow source count as production on the
+    -- Resonator's network, or only against the Resonator's own draw?
+    if Parameters[1] == "netdump" then
+        for _, entry in ipairs(gates) do
+            local res = resourceComponentOf(entry.actor)
+            if not res then
+                Ar:Log(string.format("  %s [%s]: no resource component", entry.kind, tostring(entry.channel)))
+            else
+                local energy, net = nil, nil
+                pcall(function() energy = res.EnergyComponent:Get() end)
+                net = energyNetworkOf(res)
+                local produce, consume, netFlow, current = "?", "?", "?", "?"
+                pcall(function()
+                    local summary = res:BP_GetResourceFlowSummaryForType({ Value = FName(CONFIG.RelayResource) })
+                    -- Scalars only: the summary's Flows array is a copy and walking it is the crash
+                    -- pattern the README warns about.
+                    produce = tostring(tonumber(summary.TotalProduceRate))
+                    consume = tostring(tonumber(summary.TotalConsumeRate))
+                    netFlow = tostring(tonumber(summary.TotalNetworkFlow))
+                    current = tostring(tonumber(summary.CurrentFlowRate))
+                end)
+                local on, full, wants = "?", "?", "?"
+                pcall(function() on = tostring(res:IsDeviceTurnedOn()) end)
+                pcall(function() full = tostring(energy:IsConnectedAndReceivingFullFlow()) end)
+                pcall(function() wants = tostring(energy:GetCurrentDesiredFlowRate()) end)
+                Ar:Log(string.format("  %s [%s] on=%s fullflow=%s wants=%s  produce=%s consume=%s netflow=%s current=%s",
+                    entry.kind, tostring(entry.channel), on, full, wants, produce, consume, netFlow, current))
+                if not net then
+                    Ar:Log("      no connected network")
+                else
+                    local supply, demand = networkNumbers(net)
+                    local devices = linkedDevicesOf(net)
+                    Ar:Log(string.format("      network %s: LastTotalSupply=%s LastTotalDemand=%s (summed demand %d), %d linked device(s)",
+                        shortName(net), tostring(net.LastTotalSupply), tostring(net.LastTotalDemand), demand, #devices))
+                    for i, dev in ipairs(devices) do
+                        if i > 20 then Ar:Log(string.format("      ... and %d more", #devices - 20)); break end
+                        local owner, want, active, fullDev = "?", "?", "?", "?"
+                        pcall(function() owner = shortName(dev:GetOwner()) end)
+                        pcall(function() want = tostring(dev:GetCurrentDesiredFlowRate()) end)
+                        pcall(function() active = tostring(dev:IsResourceActive()) end)
+                        pcall(function() fullDev = tostring(dev:IsConnectedAndReceivingFullFlow()) end)
+                        Ar:Log(string.format("      - %-40s wants=%-8s active=%-5s fullflow=%s", owner, want, active, fullDev))
+                    end
+                end
+            end
+        end
+        Ar:Log(string.format("[Massgate] netdump: %d gate(s); relay floor %d", #gates, CONFIG.RelayFloorRate))
         return true
     end
     if Parameters[1] == "dump" then
