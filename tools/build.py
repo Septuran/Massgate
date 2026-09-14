@@ -27,7 +27,9 @@ Steps:
   4. validate every row reference we introduce points at an existing row
   5. write the full tables to build/pak/Icarus/Content/Data/...
   6. pack build/pak into build/Massgate_v<ver>_P.pak with repak (V11, zlib); then the same for
-     mod/data/fieldkit_patches.json -> build/Fieldkit_v<ver>_P.pak (Custom World Settings rows)
+     mod/data/fieldkit_patches.json -> build/Fieldkit_v<ver>_P.pak (Custom World Settings rows), plus
+     the base-game blueprints in mod/data/fieldkit_assets.json, extracted fresh from the game's paks
+     and rewritten in place (cablereach: longer wire and water pipe sections)
   7. (--install) copy both paks + both Lua mods into the game, writing config.lua for the chosen mode
 """
 from __future__ import annotations
@@ -36,6 +38,7 @@ import argparse
 import json
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -49,6 +52,7 @@ LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
 FIELDKIT_MOD = REPO / "mod" / "ue4ss" / "Fieldkit"   # second mod: quality-of-life features, one file each
 LEGACY_MODS = ("TameRegen",)                         # earlier names; --install removes their game copies
 FIELDKIT_PATCHES = REPO / "mod" / "data" / "fieldkit_patches.json"  # its Custom World Settings rows
+FIELDKIT_ASSETS = REPO / "mod" / "data" / "fieldkit_assets.json"    # base-game blueprint defaults it rewrites
 AISETUP_TABLE = "AI/D_AISetup.json"
 MOUNT_CLASS_PREFIX = "/Game/BP/Mounts/"            # every mount, pet and farm animal actor class
 BUILD = REPO / "build"
@@ -76,7 +80,8 @@ def pak_name(version: str) -> str:
     return f"Massgate_v{version}_P.pak"
 
 GAME = Path(r"D:\SteamLibrary\steamapps\common\Icarus\Icarus")
-GAME_MODS = GAME / "Content" / "Paks" / "mods"
+GAME_PAKS = GAME / "Content" / "Paks"
+GAME_MODS = GAME_PAKS / "mods"
 UE4SS_MODS = GAME / "Binaries" / "Win64" / "ue4ss" / "Mods"
 GAME_DATA_PAK = GAME / "Content" / "Data" / "data.pak"
 DATA_MOUNT_PREFIX = "C:/BA/work/92bbbfa44df12262/Temp/Data/"  # odd build-machine path inside data.pak
@@ -383,11 +388,128 @@ def write_tables(pak_root: Path, tables: dict[str, tuple[Path, dict]], touched: 
         print(f"   {key}")
 
 
+def _fstring(buf: bytes, off: int) -> tuple[str, int]:
+    (n,) = struct.unpack_from("<i", buf, off)
+    off += 4
+    if n >= 0:
+        return buf[off:off + max(n - 1, 0)].decode("latin-1"), off + n
+    return buf[off:off + (-n - 1) * 2].decode("utf-16-le"), off - n * 2
+
+
+def uasset_names(uasset: bytes) -> list[str]:
+    """Name map of a cooked UE4.27 package header (.uasset)."""
+    tag, legacy = struct.unpack_from("<Ii", uasset, 0)
+    if tag != 0x9E2A83C1:
+        sys.exit("!! not an Unreal package header")
+    off = 8 + (0 if legacy == -4 else 4) + 8     # LegacyUE3Version, FileVersionUE4 + Licensee
+    (custom,) = struct.unpack_from("<i", uasset, off)
+    off += 4 + custom * 20 + 4                   # custom versions, TotalHeaderSize
+    _, off = _fstring(uasset, off)               # FolderName
+    off += 4                                     # PackageFlags
+    count, offset = struct.unpack_from("<ii", uasset, off)
+    names = []
+    for _ in range(count):
+        name, offset = _fstring(uasset, offset)
+        names.append(name)
+        offset += 4                              # case-insensitive + case-sensitive hashes
+    return names
+
+
+def scale_map_floats(label: str, uasset: bytes, uexp: bytes, prop: str, scale: dict[str, float],
+                     expect: dict[str, float]) -> bytes:
+    """Multiply entries of a tagged TMap<enum, float> default (FPropertyTag + FScriptMap body) in the
+    export data. Floats keep their size, so no offset anywhere in the package moves. Anything that
+    does not look exactly like that map stops the build: a guessed byte patch is not shipped."""
+    names = uasset_names(uasset)
+    index = {n: i for i, n in enumerate(names)}
+    for needed in (prop, "MapProperty", "ByteProperty", "FloatProperty", *scale):
+        if needed not in index:
+            sys.exit(f"!! {label}: name '{needed}' is not in the package; the game changed this blueprint")
+    tag = struct.pack("<iiii", index[prop], 0, index["MapProperty"], 0)
+    hits = [m.start() for m in re.finditer(re.escape(tag), uexp)]
+    if len(hits) != 1:
+        sys.exit(f"!! {label}: expected exactly one {prop} default, found {len(hits)}")
+    at = hits[0] + len(tag)
+    size, _array_index, key_type, _, value_type, _, has_guid = struct.unpack_from("<iiiiiiB", uexp, at)
+    body = at + 25
+    removed, count = struct.unpack_from("<ii", uexp, body)
+    if ((key_type, value_type, has_guid, removed) != (index["ByteProperty"], index["FloatProperty"], 0, 0)
+            or size != 8 + count * 12):
+        sys.exit(f"!! {label}: {prop} is not the TMap<enum, float> this patch expects")
+    out = bytearray(uexp)
+    seen = set()
+    for i in range(count):
+        pos = body + 8 + i * 12                  # key FName (index, number) + float value
+        (key_index,) = struct.unpack_from("<i", out, pos)
+        key = names[key_index]
+        if key not in scale:
+            continue
+        (value,) = struct.unpack_from("<f", out, pos + 8)
+        new = value * scale[key]
+        struct.pack_into("<f", out, pos + 8, new)
+        seen.add(key)
+        note = ""
+        if key in expect and abs(expect[key] - value) > 0.01:
+            note = f"  (NOTE: {expect[key]:g} expected; the game changed the vanilla value)"
+        print(f"   {label}: {key} {value:g} -> {new:g}{note}")
+    if set(scale) - seen:
+        sys.exit(f"!! {label}: {prop} has no entry for {', '.join(sorted(set(scale) - seen))}")
+    return bytes(out)
+
+
+def game_asset(repak: Path, pak: str, asset: str) -> tuple[bytes, bytes]:
+    """A fresh copy of a base-game asset (.uasset + .uexp) from the installed game, so the patch
+    always starts from the current game version instead of a copy that a game update made stale."""
+    out = BUILD / "game_assets"
+    files = [f"{asset}.uasset", f"{asset}.uexp"]
+    for f in files:
+        (out / f).unlink(missing_ok=True)
+    cmd = [str(repak), "unpack", "-q", "-f", "-o", str(out)]
+    for f in files:
+        cmd += ["-i", f]
+    subprocess.run(cmd + [str(GAME_PAKS / pak)], check=False)
+    if not all((out / f).exists() for f in files):
+        sys.exit(f"!! {asset} not found in {GAME_PAKS / pak} (a game update may have moved it).\n"
+                 f"   Find it with  repak list <pak>  and update {FIELDKIT_ASSETS.relative_to(REPO)}")
+    return (out / files[0]).read_bytes(), (out / files[1]).read_bytes()
+
+
+def write_asset_patches(repak: Path, pak_root: Path) -> None:
+    for entry in read_json(FIELDKIT_ASSETS)["assets"]:
+        asset = entry["asset"]
+        label = f"{entry['feature']}: {asset.rsplit('/', 1)[-1]}"
+        uasset, uexp = game_asset(repak, entry["pak"], asset)
+        spec = entry["map_floats"]
+        uexp = scale_map_floats(label, uasset, uexp, spec["property"], spec["scale"], spec.get("expect", {}))
+        target = pak_root / asset
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.with_suffix(".uasset").write_bytes(uasset)
+        target.with_suffix(".uexp").write_bytes(uexp)
+
+
+def warn_asset_overlaps(repak: Path) -> None:
+    """Another installed pak shipping one of the same blueprints fights ours: the pak mounted last
+    wins the whole asset, so one of the two mods silently does nothing."""
+    if not GAME_MODS.exists():
+        return
+    ours = {f"{entry['asset']}.uasset" for entry in read_json(FIELDKIT_ASSETS)["assets"]}
+    for pak in sorted(GAME_MODS.glob("*.pak")):
+        if pak.name.startswith(("Fieldkit", "Massgate")):
+            continue
+        listing = subprocess.run([str(repak), "list", str(pak)], capture_output=True, text=True).stdout.split()
+        clash = ours.intersection(listing)
+        if clash:
+            print(f"!! {pak.name} also ships {', '.join(sorted(clash))}: whichever pak mounts last wins")
+
+
 def build_fieldkit_pak(repak: Path, version: str, tables: dict[str, tuple[Path, dict]], touched: list[str]) -> Path:
     """Fieldkit's own pak, written from the SAME fully patched table set as the Massgate pak. Both
     paks replace whole tables and load alphabetically, so a table both mods add rows to must hold
-    both mods' rows in both paks; sharing one table set guarantees that."""
+    both mods' rows in both paks; sharing one table set guarantees that. The base-game blueprints
+    Fieldkit rewrites (fieldkit_assets.json) go in next to the tables."""
     write_tables(FIELDKIT_PAK_ROOT, tables, touched)
+    write_asset_patches(repak, FIELDKIT_PAK_ROOT)
+    warn_asset_overlaps(repak)
     return pack(repak, version, FIELDKIT_PAK_ROOT, "Fieldkit")
 
 
@@ -569,7 +691,9 @@ folder "Fieldkit" next to "Massgate" in ue4ss\\Mods\\ and {fk_pak} into Paks\\mo
 older Fieldkit or TameRegen files first). Every feature is switched on or off in game: Escape ->
 Custom World Settings (host only). Features: Tame Regeneration (tames set to Follow heal a share of
 their maximum health every second while out of combat, scaled by their Nurtured Recovery talent;
-Creatures section, with a rate row). Only the host / server needs the Lua; everyone needs the pak.
+Creatures section, with a rate row). The Fieldkit pak also makes electric wire and water pipe
+sections reach three times as far (6 m -> 18 m per section; always on while the pak is installed).
+Only the host / server needs the Lua; everyone needs the pak.
 
 Source, docs and issues: https://github.com/Septuran/Massgate
 """

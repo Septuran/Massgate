@@ -106,6 +106,17 @@ Features:
   power nor cartridges. Placed as the small metal crate actor wearing the thumper mesh, the
   same trick as Massgate's gates. Both mods now add rows to shared tables: `build.py` applies
   both patch files to one table set and writes every touched table into both paks.
+- **cablereach** (pak only, always on, no Custom World Settings row): **electric wire** and
+  **water pipe** sections reach **three times** as far, 6 m -> 18 m between two placed points.
+  Fuel and oil pipes and roads stay vanilla. The limit is not in any data table: it is the
+  default of `SplineTypeMaxDistance` (a map of spline type -> max distance in cm) on the
+  placement tool blueprint `BP_ActionableBehaviour_CurvedSplinePlace`, and UE4SS 3.0.1 Lua
+  cannot write maps. So `build.py` extracts that blueprint fresh from the game's pak on every
+  build, multiplies the two entries listed in `mod/data/fieldkit_assets.json` in place (same
+  byte size, nothing else moves; any other layout stops the build) and ships it in the
+  Fieldkit pak. The game checks placement on the server with the same blueprint, so host and
+  clients agree as long as everyone has the pak. After a game update, rebuild: the shipped
+  copy replaces the whole blueprint, and a stale one would undo changes the update made to it.
 
 Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
 settingsChanged, console, status }` (see the header of `main.lua`), its id in
@@ -143,6 +154,7 @@ mod/data/patches.json     rows we add to the data tables
 mod/ue4ss/Massgate/       UE4SS Lua mod (Scripts/main.lua, enabled.txt)
 mod/ue4ss/Fieldkit/       second UE4SS Lua mod: quality-of-life features (Scripts/features/*.lua)
 mod/data/fieldkit_patches.json   their Custom World Settings rows -> Fieldkit_v<ver>_P.pak
+mod/data/fieldkit_assets.json    base-game blueprint defaults Fieldkit rewrites (cablereach) -> same pak
 tools/build.py            applies patches, validates references, packs with repak
 tools/find_rows.py        search the extracted tables for a term
 docs/design.md            concept, lore, rules, row map, roadmap

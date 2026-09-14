@@ -1,0 +1,22 @@
+{
+    "_comment": "Base-game blueprint defaults Fieldkit changes. tools/build.py pulls each asset fresh from the game's own pak on every build, rewrites the listed values in place (same byte size, nothing else in the package moves) and ships the result in the Fieldkit pak. Values are Unreal units (cm).",
+    "assets": [
+        {
+            "feature": "cablereach",
+            "_comment": "SplineTypeMaxDistance = longest section one placement of each spline tool may span. The Power and Water tools are subclasses that only set their SplineType (NewEnumerator3 = electric wire, NewEnumerator6 = water pipe) and read this map from the base class. Other types (roads/paths 4000, fuel and oil pipes) stay vanilla.",
+            "pak": "pakchunk0_s20-WindowsNoEditor.pak",
+            "asset": "Icarus/Content/BP/Behaviours/Actionable/BP_ActionableBehaviour_CurvedSplinePlace",
+            "map_floats": {
+                "property": "SplineTypeMaxDistance",
+                "scale": {
+                    "SplineTypes::NewEnumerator3": 3.0,
+                    "SplineTypes::NewEnumerator6": 3.0
+                },
+                "expect": {
+                    "SplineTypes::NewEnumerator3": 600,
+                    "SplineTypes::NewEnumerator6": 600
+                }
+            }
+        }
+    ]
+}
