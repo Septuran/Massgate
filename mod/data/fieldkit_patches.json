@@ -1,5 +1,5 @@
 {
-    "_comment": "Rows the Fieldkit pak adds. Fieldkit's features are Lua; these rows put their switches into the game's own Custom World Settings screen (Escape -> Custom World Settings, host only): D_CustomGameStats rows are rendered by that screen automatically (Bool = toggle, Int = stepper between MinIntValue and MaxIntValue, DropDown = list), each bound to a hidden world stat in D_Stats. The Lua reads the values from the ProspectSubsystem's settings array by row name. Row names are prefixed Fieldkit_ and carry the feature name. This file must not touch any table mod/data/patches.json touches (both paks replace whole tables; build.py checks).",
+    "_comment": "Rows the Fieldkit pak adds: Custom World Settings switches (D_CustomGameStats rows rendered by that screen, each bound to a hidden world stat in D_Stats; the Lua reads the values from the ProspectSubsystem by row name) and, for the scour feature, its craftable Sonic Scourer and cartridges. Row names are prefixed Fieldkit_. build.py applies patches.json and this file to ONE table set and writes every touched table into both paks, so the two mods may add rows to the same tables (each pak then carries the other's rows for shared tables, which is harmless).",
     "tables": [
         {
             "table": "Stats/D_Stats.json",
@@ -148,6 +148,709 @@
                         "RowName": "Fieldkit_StowLearn_?"
                     },
                     "MaxIntValue": 1
+                }
+            ]
+        },
+        {
+            "table": "Items/D_ItemsStatic.json",
+            "_comment": "Feature scour: the Sonic Scourer (a small metal crate actor with a thumper look, like Massgate's gates) and its three cartridges.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "Meshable": {
+                        "RowName": "Mesh_Fieldkit_Scourer"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Fieldkit_Scourer"
+                    },
+                    "Interactable": {
+                        "RowName": "Fieldkit_Scourer"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "Actionable": {
+                        "RowName": "Deployable"
+                    },
+                    "Usable": {
+                        "RowName": "Place"
+                    },
+                    "Deployable": {
+                        "RowName": "Fieldkit_Scourer"
+                    },
+                    "Durable": {
+                        "RowName": "Deployable_2500"
+                    },
+                    "Decayable": {
+                        "RowName": "Decay_10_Minutes"
+                    },
+                    "Weight": {
+                        "RowName": "MediumDeployable"
+                    },
+                    "Resource": {
+                        "RowName": "Fieldkit_Scourer"
+                    },
+                    "Audio": {
+                        "RowName": "MetalDeployable"
+                    },
+                    "CraftingExperience": 0,
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            },
+                            {
+                                "TagName": "Traits.Actionable"
+                            },
+                            {
+                                "TagName": "Traits.Usable"
+                            },
+                            {
+                                "TagName": "Traits.Deployable"
+                            },
+                            {
+                                "TagName": "Traits.Durable"
+                            },
+                            {
+                                "TagName": "Traits.Inventory"
+                            }
+                        ],
+                        "ParentTags": []
+                    },
+                    "Inventory": {
+                        "RowName": "Fieldkit_Scourer"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Snow",
+                    "Meshable": {
+                        "RowName": "Mesh_Electronics"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Fieldkit_Cartridge_Snow"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Sand",
+                    "Meshable": {
+                        "RowName": "Mesh_Composites"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Fieldkit_Cartridge_Sand"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Ash",
+                    "Meshable": {
+                        "RowName": "Mesh_Charcoal"
+                    },
+                    "Itemable": {
+                        "RowName": "Item_Fieldkit_Cartridge_Ash"
+                    },
+                    "Interactable": {
+                        "RowName": "Item"
+                    },
+                    "Focusable": {
+                        "RowName": "Focusable_1H"
+                    },
+                    "Highlightable": {
+                        "RowName": "Generic"
+                    },
+                    "CraftingExperience": 0,
+                    "Generated_Tags": {
+                        "GameplayTags": [
+                            {
+                                "TagName": "Traits.Meshable"
+                            },
+                            {
+                                "TagName": "Traits.Itemable"
+                            },
+                            {
+                                "TagName": "Traits.Interactable"
+                            },
+                            {
+                                "TagName": "Traits.Highlightable"
+                            }
+                        ],
+                        "ParentTags": []
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Items/D_ItemTemplate.json",
+            "_comment": "Feature scour.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "ItemStaticData": {
+                        "RowName": "Fieldkit_Scourer"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Snow",
+                    "ItemStaticData": {
+                        "RowName": "Fieldkit_Cartridge_Snow"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Sand",
+                    "ItemStaticData": {
+                        "RowName": "Fieldkit_Cartridge_Sand"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Ash",
+                    "ItemStaticData": {
+                        "RowName": "Fieldkit_Cartridge_Ash"
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Itemable.json",
+            "_comment": "Feature scour.",
+            "add": [
+                {
+                    "Name": "Item_Fieldkit_Scourer",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Scourer-DisplayName\", \"Sonic Scourer\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Sandworm_Thumper.T_ITEM_Sandworm_Thumper",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Scourer-Description\", \"A terraforming-era ground thumper re-tuned for housekeeping. Every few minutes, while powered and loaded with the right cartridge, it fires a low sonic pulse that shakes snow, sand or ash off every building piece within range. Feed it Thermal Cartridges for snow, Cyclone Filters for sand and Scrubber Filters for ash; one cartridge serves about ten pieces per pulse. It waits for a storm to finish before it bothers. Connect it to power; press interact to load cartridges, hold to switch it on or off.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Scourer-FlavorText\", \"The colonists called it the broom. The engineers pretended not to hear.\")",
+                    "Weight": 25000,
+                    "MaxStack": 1
+                },
+                {
+                    "Name": "Item_Fieldkit_Cartridge_Snow",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Snow-DisplayName\", \"Thermal Cartridge\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Resources/ITEM_Electronics.ITEM_Electronics",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Snow-Description\", \"A sealed heating element for the Sonic Scourer. Melts packed snow off roofs and walls so the pulse can shake the rest loose. One cartridge serves about ten building pieces.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Snow-FlavorText\", \"Even on Icarus, nothing beats warmth for moving snow.\")",
+                    "Weight": 500,
+                    "MaxStack": 20
+                },
+                {
+                    "Name": "Item_Fieldkit_Cartridge_Sand",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Sand-DisplayName\", \"Cyclone Filter\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Resources/ITEM_Composite.ITEM_Composite",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Sand-Description\", \"A spun-fiber cyclone cartridge for the Sonic Scourer. Traps the sand the pulse lifts off building pieces instead of letting it settle back down. One filter serves about ten building pieces.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Sand-FlavorText\", \"The desert gives its sand freely and takes it back the same way.\")",
+                    "Weight": 500,
+                    "MaxStack": 20
+                },
+                {
+                    "Name": "Item_Fieldkit_Cartridge_Ash",
+                    "DisplayName": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Ash-DisplayName\", \"Scrubber Filter\")",
+                    "Icon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Resources/ITEM_Charcoal.ITEM_Charcoal",
+                    "Description": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Ash-Description\", \"A charcoal scrubber cartridge for the Sonic Scourer. Binds volcanic ash lifted by the pulse before it can cake onto the next surface. One filter serves about ten building pieces.\")",
+                    "FlavorText": "NSLOCTEXT(\"D_Itemable\", \"Item_Fieldkit_Cartridge_Ash-FlavorText\", \"Ash is patient. So is a good filter.\")",
+                    "Weight": 500,
+                    "MaxStack": 20
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Meshable.json",
+            "_comment": "Feature scour: dropped-item look of the Scourer.",
+            "add": [
+                {
+                    "Name": "Mesh_Fieldkit_Scourer",
+                    "ItemMesh": "/Game/ASS/DEP/SM_DEP_Thumper_Mini.SM_DEP_Thumper_Mini",
+                    "EquipHandMesh": "/Game/Assets/3DArt/Interactables/Items/DummyCube/SK_dummy_cube.SK_dummy_cube"
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Deployable.json",
+            "_comment": "Feature scour.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "Variants": [
+                        {
+                            "RowName": "Fieldkit_Scourer",
+                            "DataTableName": "D_DeployableSetup"
+                        }
+                    ],
+                    "EffectedByWeather": false,
+                    "bMustBeOutside": false
+                }
+            ]
+        },
+        {
+            "table": "Deployables/D_DeployableSetup.json",
+            "_comment": "Feature scour: placed as the small metal crate actor (inert, has an inventory); the Lua swaps its meshes for the thumper.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "DeployableBlueprint": "/Game/BP/Objects/World/Items/Deployables/Containers/BP_Metal_Crate_Small.BP_Metal_Crate_Small_C",
+                    "DeployableIcon": "/Game/Assets/2DArt/UI/Items/Item_Icons/Deployables/T_ITEM_Sandworm_Thumper.T_ITEM_Sandworm_Thumper",
+                    "DeployableName": "NSLOCTEXT(\"D_DeployableSetup\", \"Fieldkit_Scourer-DeployableName\", \"Sonic Scourer\")",
+                    "PreviewStaticMesh": "/Game/ASS/DEP/SM_DEP_Thumper_Mini.SM_DEP_Thumper_Mini",
+                    "DeployedSound": "/Game/FMOD/Events/SFX/D_Buildables/SFX_BLD_METAL.SFX_BLD_METAL",
+                    "MaxRestackingAmount": 1,
+                    "NavAreaClass": "Class'/Script/NavigationSystem.NavArea_Obstacle'"
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Resource.json",
+            "_comment": "Feature scour: an electric consumer.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "bHasEnergyConnection": true,
+                    "EnergyFlow": {
+                        "RowName": "Fieldkit_Scourer"
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Energy.json",
+            "_comment": "Feature scour: 1 kW while switched on, like two refrigerators.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "AlwaysActive": true,
+                    "AutoActivate": true,
+                    "ResourceFlowRate": 1000,
+                    "bAllowAutoRestart": true
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Inventory.json",
+            "_comment": "Feature scour: the cartridge hopper.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "Inventories": [
+                        {
+                            "RowName": "Fieldkit_Scourer",
+                            "DataTableName": "D_InventoryInfo"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "table": "Inventory/D_InventoryInfo.json",
+            "_comment": "Feature scour.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "InventoryID": {
+                        "Value": "General"
+                    },
+                    "StartingSlots": 6
+                }
+            ]
+        },
+        {
+            "table": "Traits/D_Interactable.json",
+            "_comment": "Feature scour: press opens the hopper, hold toggles power, alt-hold picks it up.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "WorldPressInteracts": [
+                        {
+                            "InteractionRow": {
+                                "RowName": "Interact_Deployable",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
+                    ],
+                    "WorldHoldInteracts": [
+                        {
+                            "InteractionRow": {
+                                "RowName": "Interact_Toggle_Device_On",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
+                    ],
+                    "WorldAltHoldInteracts": [
+                        {
+                            "InteractionRow": {
+                                "RowName": "Pickup_Deployable",
+                                "DataTableName": "D_Interactions"
+                            },
+                            "Tag": ""
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "table": "Crafting/D_ProcessorRecipes.json",
+            "_comment": "Feature scour: Scourer at the Fabricator, cartridges at the Fabricator or Machining Bench (4 per craft). No blueprint requirement.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scourer",
+                    "RequiredMillijoules": 120000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "Steel_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 20
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Electronics",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 8
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 20
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Composites",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 6
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Fieldkit_Scourer",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 1,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Snow",
+                    "RequiredMillijoules": 20000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        },
+                        {
+                            "RowName": "Machining_Bench",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "Charcoal",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 10
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Copper_Wire",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 4
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Fiber",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 10
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Fieldkit_Cartridge_Snow",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 4,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Sand",
+                    "RequiredMillijoules": 20000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        },
+                        {
+                            "RowName": "Machining_Bench",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "Fiber",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 20
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Steel_Ingot",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 2
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Leather",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 2
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Fieldkit_Cartridge_Sand",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 4,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
+                },
+                {
+                    "Name": "Fieldkit_Cartridge_Ash",
+                    "RequiredMillijoules": 20000,
+                    "RecipeSets": [
+                        {
+                            "RowName": "Fabricator",
+                            "DataTableName": "D_RecipeSets"
+                        },
+                        {
+                            "RowName": "Machining_Bench",
+                            "DataTableName": "D_RecipeSets"
+                        }
+                    ],
+                    "Inputs": [
+                        {
+                            "Element": {
+                                "RowName": "Charcoal",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 10
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Fiber",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 15
+                        },
+                        {
+                            "Element": {
+                                "RowName": "Glass",
+                                "DataTableName": "D_ItemsStatic"
+                            },
+                            "Count": 2
+                        }
+                    ],
+                    "Outputs": [
+                        {
+                            "Element": {
+                                "RowName": "Fieldkit_Cartridge_Ash",
+                                "DataTableName": "D_ItemTemplate"
+                            },
+                            "Count": 4,
+                            "DynamicProperties": [],
+                            "Alterations": []
+                        }
+                    ],
+                    "Audio": {
+                        "RowName": "MachiningBench"
+                    }
+                }
+            ]
+        },
+        {
+            "table": "Stats/D_Stats.json",
+            "_comment": "Feature scour: world stats its settings bind to.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scour_?",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_Scour_?-Title\", \"Sonic Scourer (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_Scour_?-PositiveDescription\", \"Scourers clear snow, sand and ash off buildings\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_ScourInterval_+",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_ScourInterval_+-Title\", \"Scourer Interval (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_ScourInterval_+-PositiveDescription\", \"{0} s between pulses\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                },
+                {
+                    "Name": "Fieldkit_ScourRadius_+",
+                    "Title": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_ScourRadius_+-Title\", \"Scourer Range (Fieldkit)\")",
+                    "PositiveTitleFormat": "INVTEXT(\"{0}\")",
+                    "NegativeTitleFormat": "INVTEXT(\"{0}\")",
+                    "PositiveDescription": "NSLOCTEXT(\"D_Stats\", \"Fieldkit_ScourRadius_+-PositiveDescription\", \"{0} m\")",
+                    "bIsReplicated": true,
+                    "bIsWorldStat": true,
+                    "StatCategory": {
+                        "RowName": "World"
+                    },
+                    "bHideStatInUserInterface": true
+                }
+            ]
+        },
+        {
+            "table": "Stats/D_CustomGameStats.json",
+            "_comment": "Feature scour, Misc section.",
+            "add": [
+                {
+                    "Name": "Fieldkit_Scour",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_Scour-DisplayName\", \"Fieldkit: Sonic Scourer\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_Scour-Description\", \"Placed Sonic Scourers pulse every few minutes and clear snow, sand and ash off every building piece in range, spending power and a matching cartridge. Off stops the pulses; the item stays craftable.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Bool",
+                    "DefaultValue": 1,
+                    "Stat": {
+                        "RowName": "Fieldkit_Scour_?"
+                    },
+                    "MaxIntValue": 1
+                },
+                {
+                    "Name": "Fieldkit_ScourInterval",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_ScourInterval-DisplayName\", \"Fieldkit: Scourer Interval\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_ScourInterval-Description\", \"Seconds between pulses of a Sonic Scourer. A pulse only clears pieces whose build-up stopped growing since the previous pulse, so it waits out a storm.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Int",
+                    "DefaultValue": 180,
+                    "Stat": {
+                        "RowName": "Fieldkit_ScourInterval_+"
+                    },
+                    "MinIntValue": 30,
+                    "MaxIntValue": 600
+                },
+                {
+                    "Name": "Fieldkit_ScourRadius",
+                    "DisplayName": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_ScourRadius-DisplayName\", \"Fieldkit: Scourer Range\")",
+                    "Description": "NSLOCTEXT(\"D_CustomGameStats\", \"Fieldkit_ScourRadius-Description\", \"How far from a Sonic Scourer a building piece may be for its pulse to reach it, in metres.\")",
+                    "Category": "Misc",
+                    "StatChangeability": "Anytime",
+                    "StatType": "Int",
+                    "DefaultValue": 25,
+                    "Stat": {
+                        "RowName": "Fieldkit_ScourRadius_+"
+                    },
+                    "MinIntValue": 5,
+                    "MaxIntValue": 60
                 }
             ]
         }
