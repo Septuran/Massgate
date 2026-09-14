@@ -48,7 +48,7 @@ That asymmetry is why the UDA never shipped it to the colonists: it is a leash, 
 | Outbound trip | 8 Exotics drawn from the anchor's own buffer, coupler or not | Pushing out is the expensive choice; the lattice is loaded like a furnace |
 | Panel | Hold interact opens seven slots: four Exotics-only, a module bay, one Tuning Crystal, a second module bay | The game's storage panel doubles as fuel bay, upgrade bay and tuning control |
 | Tuning Crystal | Cheap per-colour item; no crystal means no channel | The channel control lives in the panel, no extra UI |
-| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; no extra Exotics (a surcharge was tried and found confusing). Anything wired to the coupled Resonator draws from the anchor's grid, up to 5,000 units |
+| Phase Coupler | Module slotted in an Anchor; its Resonator then counts as powered by the anchor | Outposts need no generator; no extra Exotics (a surcharge was tried and found confusing). Anything wired to the coupled Resonator draws from the anchor's grid, up to 5,000 units. The anchor always pushes at least the Resonator's own 500 draw, even when the outpost grid asks for nothing: a switched-off device demands nothing, so a purely demand-following relay left a cold Resonator at zero forever |
 | Channel Amplifier | Module in the anchor's other bay | Raises the relay cap from 5,000 to 20,000 units; does nothing without a coupler |
 | Inbound trip | Free, resonator to anchor | The anchor pulls you home |
 | Cooldown | 20 s per gate after use | Prevents rapid back-and-forth abuse |
