@@ -81,9 +81,11 @@ Features:
 - **stow** (Misc section): one key puts the backpack away. Every storage container can be
   **pinned** to a set of item types: open the chest, put in what belongs there and press
   **Shift+P** (or the "Pin contents" button the mod adds to the chest window); the chest is
-  now pinned to exactly the types it holds, and pinning an empty chest clears it. With
-  **learning** on (default) opening a chest also adds its contents to its pins, so a chest
-  that crafting emptied still attracts its item. **Shift+E** then moves every backpack stack
+  now pinned to exactly the types it holds, and pinning an empty chest clears it. The smaller
+  **"+ Add contents"** button next to it (or **Ctrl+Shift+P**) instead ADDS what the chest holds
+  now to the pins it already has - use it when some pinned types are out of stock, where pinning
+  would drop them. With **learning** on (default) opening a chest also adds its contents to its
+  pins, so a chest that crafting emptied still attracts its item. **Shift+E** then moves every backpack stack
   whose type is pinned on a chest within range (default 30 m) into that chest, nearest first,
   spilling into the next pinned chest when one is full; the hotbar is never touched. The
   pins show in the chest window title (short form) and on the Pin bar (full list), as an
