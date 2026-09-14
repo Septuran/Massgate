@@ -7,6 +7,10 @@
     learning on (default), opening a chest also adds whatever it holds to its pins, so chests you
     use normally attract those items later even after crafting drained them.
 
+    The smaller "Add contents" button next to it (or Ctrl+Shift+P) ADDS what the chest holds now to
+    the pins it already has, instead of replacing them. Use it when some of the pinned types happen
+    to be out of stock: pinning would drop them, adding keeps them and takes the new types along.
+
     The deposit key (Shift+E) then moves every backpack stack whose type is pinned on a chest within
     range into that chest (nearest first, spilling over to the next pinned chest when one is full).
     The hotbar is never touched, and items without a pinned chest stay in the backpack.
@@ -34,7 +38,8 @@
         graph functions cannot be hooked, so the visible tooltips are polled a few times a second
 
     Console: `fieldkit stow` (status + nearby chests), `fieldkit stow pins` (every pinned chest),
-    `fieldkit stow deposit`, `fieldkit stow pin|unpin <item row>` / `fieldkit stow clear` (open chest),
+    `fieldkit stow deposit`, `fieldkit stow add` (add the open chest's contents to its pins),
+    `fieldkit stow pin|unpin <item row>` / `fieldkit stow clear` (open chest),
     `fieldkit stow names <text>` (find item rows by display name), `fieldkit stow scan` (diagnostic).
 ]]
 
@@ -46,9 +51,10 @@ local CONFIG = {
     Keys = {
         Deposit = { Key = "E", Modifiers = { "SHIFT" } },
         Pin     = { Key = "P", Modifiers = { "SHIFT" } },
+        Add     = { Key = "P", Modifiers = { "CONTROL", "SHIFT" } },
     },
     TitleBar           = true,    -- rewrite the chest window title with the pins
-    PinButton          = true,    -- add a "Pin contents" button to the chest window
+    PinButton          = true,    -- add the "Pin contents" / "Add contents" buttons to the chest window
     Tooltip            = true,    -- show the pins in the in-world tooltip
     ExcludedContainers = {},      -- container class names never used, e.g. { "BP_Deep_Freeze_C" }
     MaxBackpackSlots   = 80,      -- upper bound when the slot count cannot be read
@@ -85,7 +91,8 @@ local pinsDirty = false
 local openChest = nil      -- registry entry of the chest whose window is open
 local openInv = nil
 local chestWidget = nil    -- the last UMG_Chest_C widget the game created
-local pinButtons = {}      -- our button full name -> chest widget
+local chestButtons = {}    -- our button full name -> { btn, widget, action = "pin" | "add" }
+local learnOpenChest       -- defined below; resolveOpenChest calls it before that point
 local hooks = {}           -- hook path -> true once registered
 local warned = {}
 
@@ -152,8 +159,24 @@ end
 -- backpack (2026-09-06). GetItem stays as the fallback when the array read is unavailable.
 local slotReadMode = nil
 
+-- Current length of the live slot array, or nil when it cannot be read.
+local function liveSlotNum(inv)
+    local n = nil
+    pcall(function() n = tonumber(inv.Slots.Slots:GetArrayNum()) end)
+    return n
+end
+
 local function slotItem(inv, slot)
     local row, count = nil, 0
+    -- Slots is a replicated FInventorySlotsFastArray: the game grows and shrinks it at runtime
+    -- (UInventory::RemoveSlots, bags being added or taken out, a replication update rebuilding it).
+    -- Indexing it past its CURRENT length is a raw out-of-bounds read of a live TArray and takes the
+    -- game down with an access violation, so the length is re-checked on every read instead of
+    -- trusting a count captured earlier (crash 2026-09-10, deposit slot 41 of 46). A slot that is
+    -- simply gone is "empty", NOT an array-read failure: erroring here would drop us into the
+    -- GetItem fallback below, whose struct copies are their own crash.
+    local live = liveSlotNum(inv)
+    if live and slot + 1 > live then return nil, 0 end
     local okArr = pcall(function()
         if not inv:HasValidItemInSlot(slot) then return end
         local elem = inv.Slots.Slots[slot + 1]
@@ -412,41 +435,53 @@ local function refreshTitle()
     if not ok then once("title", "chest title update failed: %s", tostring(err)) end
 end
 
-local function buttonLabel()
+local function buttonLabel(action)
     local rec = openChest and pinsOf(openChest) or nil
+    if action == "add" then
+        if rec then return "+ Add contents  (Ctrl+Shift+P)" end
+        return "+ Add contents  (not pinned yet)"
+    end
     if rec then return string.format("Pinned (Shift+P): %s", (joinNames(rec.rows))) end
     return "Pin contents  (Shift+P)"
 end
 
 local function refreshButton()
-    for name, rec in pairs(pinButtons) do
+    for name, rec in pairs(chestButtons) do
         if not valid(rec.btn) or not valid(rec.widget) then
-            pinButtons[name] = nil
+            chestButtons[name] = nil
         elseif rec.widget == chestWidget then
             pcall(function()
-                local text = makeText(buttonLabel())
+                local text = makeText(buttonLabel(rec.action))
                 if text then rec.btn.ButtonText:SetText(text) end
             end)
         end
     end
 end
 
+-- One button in the chest window's vertical box. The "add" button is narrowed by centring it in its
+-- slot instead of filling the row (SetHorizontalAlignment takes a plain enum; SetPadding would need
+-- an FMargin struct, which reflection cannot pass safely - see README on struct crashes).
+local function addChestButton(widget, action, narrow)
+    local controller = core.controller()
+    local lib = StaticFindObject(CONFIG.WidgetLibrary)
+    local cls = StaticFindObject(CONFIG.ButtonClass)
+    if not valid(lib) or not valid(cls) or not valid(controller) then error("widget library, button class or controller missing") end
+    local btn = lib:Create(controller, cls, controller)
+    if not valid(btn) then error("Create returned nothing") end
+    local slot = widget.InventoryVertBox:AddChildToVerticalBox(btn)
+    if narrow and valid(slot) then pcall(function() slot:SetHorizontalAlignment(2) end) end -- HAlign_Center
+    local text = makeText(buttonLabel(action))
+    if text then btn.ButtonText:SetText(text) end
+    chestButtons[core.fullName(btn)] = { btn = btn, widget = widget, action = action }
+    L.dbg("%s button added to %s", action, core.shortName(widget))
+end
+
 local function addPinButton(widget)
     if not CONFIG.PinButton or not valid(widget) then return end
-    local ok, err = pcall(function()
-        local controller = core.controller()
-        local lib = StaticFindObject(CONFIG.WidgetLibrary)
-        local cls = StaticFindObject(CONFIG.ButtonClass)
-        if not valid(lib) or not valid(cls) or not valid(controller) then error("widget library, button class or controller missing") end
-        local btn = lib:Create(controller, cls, controller)
-        if not valid(btn) then error("Create returned nothing") end
-        widget.InventoryVertBox:AddChildToVerticalBox(btn)
-        local text = makeText(buttonLabel())
-        if text then btn.ButtonText:SetText(text) end
-        pinButtons[core.fullName(btn)] = { btn = btn, widget = widget }
-        L.dbg("pin button added to %s", core.shortName(widget))
-    end)
+    local ok, err = pcall(addChestButton, widget, "pin", false)
     if not ok then once("button", "pin button not added (%s); the pin key still works", tostring(err)) end
+    local okAdd, errAdd = pcall(addChestButton, widget, "add", true)
+    if not okAdd then once("addButton", "add-contents button not added (%s); Ctrl+Shift+P still works", tostring(errAdd)) end
 end
 
 ------------------------------------------------------------------------------------------
@@ -512,16 +547,54 @@ local function pinOpenChest()
     refreshButton()
 end
 
-local function learnOpenChest()
-    if not CONFIG.Learn or not openChest or not valid(openInv) then return end
+-- Union of the open chest's pins and what it holds right now. Returns the number of types added and
+-- their names, or nil when there is no usable open chest.
+local function mergeOpenChestPins()
+    if not openChest or not valid(openChest.actor) or not valid(openInv) then return nil end
     local rec = pinsOf(openChest)
-    local rows, added = {}, 0
+    local rows, fresh = {}, {}
     if rec then for row in pairs(rec.rows) do rows[row] = true end end
     for row in pairs(contentsOf(openInv, CONFIG.MaxChestSlots)) do
-        if not rows[row] then rows[row], added = true, added + 1 end
+        if not rows[row] then
+            rows[row] = true
+            fresh[#fresh + 1] = itemName(row)
+        end
     end
-    if added > 0 then
-        setPins(openChest, rows)
+    if #fresh == 0 then return 0, "", rows end
+    if not setPins(openChest, rows) then return nil end
+    table.sort(fresh)
+    return #fresh, table.concat(fresh, ", "), rows
+end
+
+-- The "Add contents" button / Ctrl+Shift+P: keep the pins the chest already has and take whatever it
+-- holds now along, so types that happen to be out of stock are not dropped the way pinning drops them.
+local function addOpenChestPins()
+    ensurePins()
+    if not openChest and valid(chestWidget) then resolveOpenChest(chestWidget, "add key") end
+    local added, names, rows = mergeOpenChestPins()
+    if added == nil then
+        core.tell("Stow: open a chest first, then press the add key")
+        return
+    end
+    if added == 0 then
+        local names2, n = joinNames(rows)
+        if n == 0 then
+            core.tell(string.format("Stow: %s is empty and not pinned; put items in first", openChest.name))
+        else
+            core.tell(string.format("Stow: %s already pinned to everything it holds (%s)", openChest.name, names2))
+        end
+    else
+        core.tell(string.format("Stow: %s pinned to %d more type(s): %s", openChest.name, added, names))
+        core.tell(string.format("   now pinned to %s", (joinNames(rows))))
+    end
+    refreshTitle()
+    refreshButton()
+end
+
+function learnOpenChest()
+    if not CONFIG.Learn then return end
+    local added, _, rows = mergeOpenChestPins()
+    if added and added > 0 then
         L.dbg("%s learned %d type(s): %s", openChest.name, added, (joinNames(rows)))
     end
 end
@@ -563,6 +636,13 @@ local function deposit()
     local slots = slotCount(backpack, CONFIG.MaxBackpackSlots)
     L.dbg("deposit: %d backpack slot(s), %d pinned chest(s) in range", slots, #nearby)
     for slot = 0, slots - 1 do
+        -- Every OnServer_ShiftItemAuto below can change the backpack's slot array, so the count read
+        -- before the loop goes stale mid-deposit; re-check it rather than walking off the end.
+        local live = liveSlotNum(backpack)
+        if live and slot >= live then
+            L.dbg("deposit: backpack shrank from %d to %d slot(s); stopping at slot %d", slots, live, slot)
+            break
+        end
         local row, count = slotItem(backpack, slot)
         if row then
             L.dbg("deposit: slot %d = %d x %s", slot, count, row)
@@ -575,6 +655,9 @@ local function deposit()
                         L.dbg("deposit: slot %d -> %s", slot, cand.entry.name)
                         local ok, err = pcall(function() controller:OnServer_ShiftItemAuto(backpack, slot, inv) end)
                         if not ok then once("shift", "OnServer_ShiftItemAuto failed: %s", tostring(err)); break end
+                        -- Marker: if a crash ever lands between this line and the next slot line, it
+                        -- is the re-read that died, not the game's move.
+                        L.dbg("deposit: slot %d moved, re-reading", slot)
                         local rowAfter, after = slotItem(backpack, slot)
                         local delta = (rowAfter == row) and (before - after) or before
                         if delta > 0 then
@@ -765,8 +848,9 @@ end
 local function onButtonClicked(self)
     local btn = core.unwrap(self)
     if not valid(btn) then return end
-    if pinButtons[core.fullName(btn)] then
-        ExecuteInGameThread(function() pcall(pinOpenChest) end)
+    local rec = chestButtons[core.fullName(btn)]
+    if rec then
+        ExecuteInGameThread(function() pcall(rec.action == "add" and addOpenChestPins or pinOpenChest) end)
     end
 end
 
@@ -851,6 +935,7 @@ function F.init(coreRef, config)
 
     bindKey(CONFIG.Keys.Deposit, "deposit", deposit)
     bindKey(CONFIG.Keys.Pin, "pin", pinOpenChest)
+    bindKey(CONFIG.Keys.Add, "add-to-pins", addOpenChestPins)
 end
 
 local function applySettings()
@@ -895,6 +980,15 @@ function F.console(_, params, Ar)
     local word = params[1]
     ensurePins()
     if word == "deposit" then deposit(); return end
+    if word == "add" then
+        if not openChest then Ar:Log("[Fieldkit:stow] open a chest first"); return end
+        local added, names, rows = mergeOpenChestPins()
+        if added == nil then Ar:Log("[Fieldkit:stow] could not read the chest; try again"); return end
+        Ar:Log(string.format("[Fieldkit:stow] %s: %d type(s) added%s; now pinned to: %s",
+            openChest.name, added, added > 0 and (" (" .. names .. ")") or "", (joinNames(rows))))
+        refreshTitle(); refreshButton()
+        return
+    end
     if word == "pin" or word == "unpin" then
         local row = params[2]
         if not row then Ar:Log("[Fieldkit:stow] usage: fieldkit stow pin|unpin <item row>  (fieldkit stow names <text> finds rows)"); return end
@@ -967,7 +1061,7 @@ function F.console(_, params, Ar)
         string.format("%s (%d tracked, %d pinned, last %.2f ms, worst %.2f ms, %d polls)", CONFIG.Tooltip and "polling" or "OFF",
             pollStats.tracked, pollStats.pinnedWidgets, pollStats.lastMs, pollStats.worstMs, pollStats.polls),
         hooks[CONFIG.ButtonClickHook] and "ok" or "no"))
-    Ar:Log("[Fieldkit:stow] usage: fieldkit stow | deposit | pins | pin|unpin <row> | clear | names <text> | scan")
+    Ar:Log("[Fieldkit:stow] usage: fieldkit stow | deposit | add | pins | pin|unpin <row> | clear | names <text> | scan")
 end
 
 return F
