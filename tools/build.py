@@ -46,6 +46,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 ORIGINAL = REPO / "data" / "original"
 PREVIOUS = REPO / "data" / "previous"   # the extraction before the last --extract: merge baseline
+HISTORY = REPO / "data" / "history"     # every older extraction, one folder each: also merge baselines
 INSTALLED = REPO / "data" / "installed"
 PATCHES = REPO / "mod" / "data" / "patches.json"
 LUA_MOD = REPO / "mod" / "ue4ss" / "Massgate"
@@ -93,9 +94,17 @@ def extract_game_tables(repak: Path) -> None:
         sys.exit(f"!! game data.pak not found: {GAME_DATA_PAK}")
     if ORIGINAL.exists():
         # Keep the outgoing tables: --merge-installed uses them to tell an installed mod's real
-        # changes from its stale copies of rows the game update changed.
+        # changes from its stale copies of rows the game update changed. Older extractions move to
+        # data/history rather than being deleted: a mod can be several game updates old
+        # (2026-09-15: Sulfur and Gold Ore icons again, from mods older than data/previous).
         if PREVIOUS.exists():
-            shutil.rmtree(PREVIOUS)
+            import datetime
+            stamp = datetime.datetime.fromtimestamp((PREVIOUS / "Items" / "D_ItemsStatic.json").stat().st_mtime
+                                                    if (PREVIOUS / "Items" / "D_ItemsStatic.json").exists()
+                                                    else PREVIOUS.stat().st_mtime).strftime("%Y%m%d-%H%M%S")
+            HISTORY.mkdir(parents=True, exist_ok=True)
+            PREVIOUS.rename(HISTORY / stamp)
+            print(f"   older tables kept at {HISTORY / stamp}")
         ORIGINAL.rename(PREVIOUS)
         print(f"   previous tables kept at {PREVIOUS}")
     ORIGINAL.mkdir(parents=True)
@@ -156,33 +165,80 @@ def row_json(row: dict) -> str:
     return json.dumps(row, sort_keys=True, ensure_ascii=False)
 
 
-def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict | None, pak_dir: Path,
-                          quiet: bool) -> None:
+ASSET_INDEX_CACHE = BUILD / "asset_index.json"
+GAME_PATH_RE = re.compile(r"/Game/([^'\"\s.]+)")
+
+
+def asset_index(repak: Path) -> set[str]:
+    """Lower-case package paths ('assets/2dart/ui/.../item_ore_sulfur') of every asset in the game's
+    paks and the other installed mod paks (ours excluded: they must not vouch for themselves).
+    `repak list` over ~45 paks takes a while, so the listing is cached per pak by size and mtime."""
+    paks = sorted(GAME_PAKS.glob("*.pak")) + sorted(
+        p for p in GAME_MODS.glob("*.pak") if not p.name.startswith(("Fieldkit", "Massgate", *LEGACY_MODS)))
+    try:
+        cache = read_json(ASSET_INDEX_CACHE)
+    except Exception:  # noqa: BLE001
+        cache = {}
+    fresh: dict[str, dict] = {}
+    for pak in paks:
+        stat = pak.stat()
+        stamp = [stat.st_size, int(stat.st_mtime)]
+        entry = cache.get(pak.name)
+        if not entry or entry.get("stamp") != stamp:
+            listing = subprocess.run([str(repak), "list", str(pak)], capture_output=True, text=True).stdout.splitlines()
+            packages = set()
+            for line in listing:
+                path = line.strip().replace("\\", "/")
+                cut = path.find("Content/")
+                if cut < 0 or not path.endswith((".uasset", ".umap")):
+                    continue
+                packages.add(path[cut + len("Content/"):].rsplit(".", 1)[0].lower())
+            entry = {"stamp": stamp, "packages": sorted(packages)}
+        fresh[pak.name] = entry
+    BUILD.mkdir(exist_ok=True)
+    ASSET_INDEX_CACHE.write_text(json.dumps(fresh), encoding="utf-8")
+    return {p for entry in fresh.values() for p in entry["packages"]}
+
+
+def missing_assets(value: object, assets: set[str] | None) -> list[str]:
+    """/Game/ paths in a row value whose package is in no pak (a renamed or deleted asset)."""
+    if assets is None:
+        return []
+    return [m.group(0) for m in GAME_PATH_RE.finditer(row_json(value)) if m.group(1).lower() not in assets]
+
+
+def merge_installed_table(key: str, table: dict, mod_table: dict, baselines: list[dict], pak_dir: Path,
+                          quiet: bool, assets: set[str] | None = None) -> None:
     """Row-level overlay of an installed mod's full-table copy onto the fresh game table.
 
     Installed mods ship whole tables built against the game version of their day. Copying the
     table wholesale would drag their stale copies of rows the game has since changed into our
     pak (2026-09-04: Sulfur and Gold Ore lost their icons that way). So: rows the mod adds are
-    taken; rows that differ from the fresh game row are taken only if they also differ from the
-    PREVIOUS game version (data/previous, snapshotted by --extract) -- a row equal to the old
-    game row is just the mod's untouched copy of it. Rows the mod has but the fresh table does not
-    are added -- unless the baseline shows the GAME deleted them, in which case they are dropped.
-    Without a baseline every differing row is taken and listed, so the ambiguity is at least
-    visible."""
+    taken; fields that differ from the fresh game row are taken only if they also differ from
+    EVERY older game version we have (data/previous and data/history, snapshotted by --extract)
+    -- a value equal to an old game value is just the mod's untouched copy of it, however many
+    updates old the mod is (2026-09-15: with only the last version as baseline, the 09-04 icon
+    renames came back). Rows the mod has but the fresh table does not are added -- unless a
+    baseline shows the GAME deleted them, in which case they are dropped. Without any baseline
+    every differing row is taken and listed, so the ambiguity is at least visible.
+
+    Last line of defence, independent of baselines: a taken field whose /Game/ asset path exists
+    in no pak keeps the game's value (a stale reference renders as a white square at best)."""
     rows = table["Rows"]
     index = {r["Name"]: i for i, r in enumerate(rows)}
-    prev_rows = {r["Name"]: r for r in (previous or {}).get("Rows", [])} if previous else None
-    added, applied, skipped, unsure, conflicts, deleted = 0, [], 0, [], [], []
+    base_rows = [{r["Name"]: r for r in b.get("Rows", [])} for b in baselines]
+    added, applied, skipped, unsure, conflicts, deleted, broken, dangling = 0, [], 0, [], [], [], [], []
     for mod_row in mod_table.get("Rows", []):
         name = mod_row["Name"]
         if name not in index:
             # A row the fresh game table lacks is usually one the mod adds -- but it is also what a
-            # row the GAME deleted looks like from here. The baseline tells them apart: present in
-            # data/previous means the game dropped it in the last update (2026-09-11: Cobalt_Ingot),
-            # and re-adding it would ship an orphan row whose mesh and icon assets are gone too.
-            if prev_rows is not None and name in prev_rows:
+            # row the GAME deleted looks like from here. The baselines tell them apart: present in
+            # an older extraction means the game dropped it (2026-09-11: Cobalt_Ingot), and
+            # re-adding it would ship an orphan row whose mesh and icon assets are gone too.
+            if any(name in b for b in base_rows):
                 deleted.append(name)
                 continue
+            dangling += [f"{name}: {p}" for p in missing_assets(mod_row, assets)]  # nothing to fall back on; say so
             rows.append(mod_row)
             index[name] = len(rows) - 1
             added += 1
@@ -190,28 +246,48 @@ def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict
         fresh = rows[index[name]]
         if row_json(fresh) == row_json(mod_row):
             continue
-        prev = prev_rows.get(name) if prev_rows is not None else None
-        if prev is None:
-            unsure.append(name)  # no baseline: take the mod's row whole
-            rows[index[name]] = mod_row
+        olds = [b[name] for b in base_rows if name in b]
+        if not olds:
+            unsure.append(name)  # no baseline: take the mod's row whole, except dead asset paths
+            merged = dict(mod_row)
+            for field in mod_row:
+                if row_json(mod_row[field]) != row_json(fresh.get(field)) and missing_assets(mod_row[field], assets):
+                    broken.append(f"{name}.{field}: {missing_assets(mod_row[field], assets)[0]}")
+                    if field in fresh:
+                        merged[field] = fresh[field]
+            rows[index[name]] = merged
             applied.append(name)
             continue
         # Three-way merge per field: start from the fresh game row, apply only the fields the mod
-        # actually changed relative to the previous game version. (Deyvid's AIO changes Weight and
+        # actually changed relative to every older game version. (Deyvid's AIO changes Weight and
         # MaxStack on nearly every item; a whole-row comparison would drag its stale Icon along.)
         # A field the mod's row simply lacks is not a change: modding tools drop fields (Different
         # Pouch's Kiwi bait row has no Icon), and deleting a field is never what a mod means.
         merged = dict(fresh)
         for field in mod_row:
-            if row_json(mod_row[field]) != row_json(prev.get(field)):
-                if row_json(fresh.get(field)) != row_json(prev.get(field)):
-                    conflicts.append(f"{name}.{field}")  # game and mod both changed it; mod wins
-                merged[field] = mod_row[field]
+            value = row_json(mod_row[field])
+            if any(value == row_json(old.get(field)) for old in olds):
+                continue  # the mod's copy of some older game value
+            if row_json(fresh.get(field)) == value:
+                continue
+            dead = missing_assets(mod_row[field], assets)
+            if dead:
+                broken.append(f"{name}.{field}: {dead[0]}")
+                continue
+            if row_json(fresh.get(field)) != row_json(olds[0].get(field)):
+                conflicts.append(f"{name}.{field}")  # game and mod both changed it; mod wins
+            merged[field] = mod_row[field]
         if row_json(merged) == row_json(fresh):
             skipped += 1  # only stale copies of rows the game has since changed
         else:
             rows[index[name]] = merged
             applied.append(name)
+    if broken:
+        print(f"!! {key} <- {pak_dir.name}: {len(broken)} asset path(s) found in no pak, game value kept: {broken[:4]}"
+              + ("..." if len(broken) > 4 else ""))
+    if dangling:
+        print(f"!! {key} <- {pak_dir.name}: {len(dangling)} asset path(s) in rows the mod adds are in no pak "
+              f"(the mod's own problem, rows kept): {dangling[:4]}" + ("..." if len(dangling) > 4 else ""))
     if not quiet:
         print(f"   overlay {key:45s} <- {pak_dir.name}: +{added} rows, {len(applied)} changed"
               + (f", {skipped} stale game rows ignored" if skipped else "")
@@ -220,10 +296,18 @@ def merge_installed_table(key: str, table: dict, mod_table: dict, previous: dict
               + (f", no baseline for {len(unsure)}: {unsure[:6]}{'...' if len(unsure) > 6 else ''}" if unsure else ""))
 
 
-def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] | None = None) -> dict[str, tuple[Path, dict]]:
+def baseline_dirs() -> list[Path]:
+    """Older game extractions, newest first: data/previous, then data/history/<stamp>."""
+    older = sorted((p for p in HISTORY.iterdir() if p.is_dir()), reverse=True) if HISTORY.exists() else []
+    return ([PREVIOUS] if PREVIOUS.exists() else []) + older
+
+
+def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] | None = None,
+                     repak: Path | None = None) -> dict[str, tuple[Path, dict]]:
     """Return {rel_path: (rel_path, table_json)} for every original table (fresh copies each call).
     Installed-mod overlays are applied only to the tables in `only` (the ones our pak will ship);
-    the rest never leave this process, so merging them would only add noise."""
+    the rest never leave this process, so merging them would only add noise. With `repak`, merged
+    asset paths are checked against the paks' contents."""
     tables: dict[str, tuple[Path, dict]] = {}
     for path in sorted(ORIGINAL.rglob("*.json")):
         rel = path.relative_to(ORIGINAL)
@@ -233,6 +317,10 @@ def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] 
     if not INSTALLED.exists():
         print("!! --merge-installed given but data/installed is missing; using originals only")
         return tables
+    assets = asset_index(repak) if repak is not None and GAME_PAKS.exists() else None
+    if assets is not None and not quiet:
+        print(f"   asset index: {len(assets):,} packages in the game and installed mod paks")
+    baselines = baseline_dirs()
     for pak_dir in sorted(INSTALLED.iterdir()):  # alphabetical = game load order
         for path in pak_dir.rglob("*.json"):
             parts = [p.lower() for p in path.relative_to(pak_dir).parts]
@@ -244,9 +332,8 @@ def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] 
             key = str(rel).replace("\\", "/")
             if key not in tables or (only is not None and key not in only):
                 continue
-            prev_path = PREVIOUS / rel
-            previous = read_json(prev_path) if prev_path.exists() else None
-            merge_installed_table(key, tables[key][1], read_json(path), previous, pak_dir, quiet)
+            olds = [read_json(d / rel) for d in baselines if (d / rel).exists()]
+            merge_installed_table(key, tables[key][1], read_json(path), olds, pak_dir, quiet, assets)
     return tables
 
 
@@ -816,7 +903,8 @@ def main() -> int:
     fk_patches = read_json(FIELDKIT_PATCHES)
     print("1. loading base tables")
     tables = load_base_tables(args.merge_installed,
-                              only={p["table"] for p in patches["tables"]} | {p["table"] for p in fk_patches["tables"]})
+                              only={p["table"] for p in patches["tables"]} | {p["table"] for p in fk_patches["tables"]},
+                              repak=args.repak)
     print("2. applying patches (Massgate, then Fieldkit, into one table set)")
     introduced = apply_patches(tables, expand_channels(patches))
     fk_introduced = apply_patches(tables, fk_patches)
