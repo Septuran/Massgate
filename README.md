@@ -120,6 +120,13 @@ Features:
   clients agree as long as everyone has the pak. After a game update, rebuild: the shipped
   copy replaces the whole blueprint, and a stale one would undo changes the update made to it.
 
+- **vanillapower** (pak only, always on): solar panels and wind turbines behave as in the base
+  game again. Deyvid's All-in-One mod makes both `AlwaysActive` (and raises their output), so
+  solar keeps producing at night and turbines never take wear damage. `vanilla_rows` in
+  `fieldkit_patches.json` lists table rows that `build.py` resets to the fresh game version
+  after `--merge-installed`; the Fieldkit pak loads after `Deyvid_Mods_All-in-One_P.pak`, so
+  its copy wins. Only these two `D_Energy` rows are reset; the rest of that mod is untouched.
+
 Adding a feature: a file `Scripts/features/<id>.lua` returning `{ id, title, init, tick,
 settingsChanged, console, status }` (see the header of `main.lua`), its id in
 `CONFIG.Features`, and its rows in `fieldkit_patches.json` (a `D_CustomGameStats` row per
