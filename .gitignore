@@ -23,3 +23,5 @@ data/installed/
 
 # Previous extraction: merge baseline for --merge-installed (--extract refreshes it)
 data/previous/
+# Older extractions, also merge baselines (--extract moves data/previous here)
+data/history/
