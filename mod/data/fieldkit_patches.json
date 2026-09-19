@@ -1,5 +1,9 @@
 {
     "_comment": "Rows the Fieldkit pak adds: Custom World Settings switches (D_CustomGameStats rows rendered by that screen, each bound to a hidden world stat in D_Stats; the Lua reads the values from the ProspectSubsystem by row name) and, for the scour feature, its craftable Sonic Scourer and cartridges. Row names are prefixed Fieldkit_. build.py applies patches.json and this file to ONE table set and writes every touched table into both paks, so the two mods may add rows to the same tables (each pak then carries the other's rows for shared tables, which is harmless).",
+    "vanilla_rows": {
+        "_comment": "Rows reset to the fresh game version after --merge-installed, undoing what installed mods change there (the Fieldkit pak loads after them). Feature vanillapower: Deyvid AIO makes solar panels and wind turbines AlwaysActive, so solar runs at night and turbines never take wear damage.",
+        "Traits/D_Energy.json": ["SolarPanel", "WindTurbine"]
+    },
     "tables": [
         {
             "table": "Stats/D_Stats.json",

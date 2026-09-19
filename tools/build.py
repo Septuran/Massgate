@@ -337,6 +337,30 @@ def load_base_tables(merge_installed: bool, quiet: bool = False, only: set[str] 
     return tables
 
 
+def restore_vanilla_rows(tables: dict[str, tuple[Path, dict]], spec: dict) -> list[str]:
+    """Put the fresh game version of the listed rows back after the installed-mod merge
+    ({table: [row names]}), so our paks, which load after those mods, undo their change to exactly
+    those rows. Returns the tables touched."""
+    touched = []
+    for key, names in spec.items():
+        if key.startswith("_"):
+            continue
+        if key not in tables:
+            sys.exit(f"!! vanilla_rows: unknown table {key}")
+        game = {r["Name"]: r for r in read_json(ORIGINAL / key)["Rows"]}
+        rows = tables[key][1]["Rows"]
+        for name in names:
+            if name not in game:
+                sys.exit(f"!! vanilla_rows: {key} has no game row {name} (a game update renamed it?)")
+            for i, row in enumerate(rows):
+                if row["Name"] == name:
+                    if row_json(row) != row_json(game[name]):
+                        print(f"   vanilla  {key}:{name} (an installed mod had changed it)")
+                    rows[i] = game[name]
+        touched.append(key)
+    return touched
+
+
 def expand_channels(patches: dict) -> dict:
     """Clone every row of a per_channel table once per channel, replacing {CH}."""
     channels = patches.get("channels", [])
@@ -905,11 +929,12 @@ def main() -> int:
     tables = load_base_tables(args.merge_installed,
                               only={p["table"] for p in patches["tables"]} | {p["table"] for p in fk_patches["tables"]},
                               repak=args.repak)
+    vanilla_touched = restore_vanilla_rows(tables, fk_patches.get("vanilla_rows", {}))
     print("2. applying patches (Massgate, then Fieldkit, into one table set)")
     introduced = apply_patches(tables, expand_channels(patches))
     fk_introduced = apply_patches(tables, fk_patches)
     touched = sorted({key for key, _ in introduced})
-    fk_touched = sorted({key for key, _ in fk_introduced})
+    fk_touched = sorted({key for key, _ in fk_introduced} | set(vanilla_touched))
     if args.dev:
         print("3. DEV MODE")
         apply_dev_mode(tables, introduced + fk_introduced)
